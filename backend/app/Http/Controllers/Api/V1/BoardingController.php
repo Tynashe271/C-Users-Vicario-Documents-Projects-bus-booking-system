@@ -9,6 +9,8 @@ use App\Models\Trip;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class BoardingController extends Controller
 {
@@ -37,14 +39,50 @@ class BoardingController extends Controller
     public function scan(Request $request): JsonResponse
     {
         abort_unless($request->user()->can('boarding.manage'), 403);
-        $validated = $request->validate([
+        $validated = $request->validate($this->scanRules());
+
+        return response()->json($this->processScan($request, $validated));
+    }
+
+    /**
+     * Bulk-apply scans a device recorded while offline (e.g. a conductor's app that lost signal
+     * mid-route). Each scan is applied independently and reports its own outcome, so one bad or
+     * already-applied entry in the batch does not block the rest from syncing.
+     */
+    public function syncScans(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->can('boarding.manage'), 403);
+        $validated = $request->validate(['scans' => ['required', 'array', 'min:1', 'max:200'], 'scans.*' => ['array']]);
+        $results = collect($validated['scans'])->map(function (array $scan) use ($request): array {
+            try {
+                $clean = validator($scan, $this->scanRules())->validate();
+
+                return ['code' => $scan['code'] ?? null, 'action' => $scan['action'] ?? null, 'status' => 'applied', 'ticket' => $this->processScan($request, $clean)];
+            } catch (ValidationException $exception) {
+                return ['code' => $scan['code'] ?? null, 'action' => $scan['action'] ?? null, 'status' => 'failed', 'error' => collect($exception->errors())->flatten()->implode(' ')];
+            } catch (Throwable $exception) {
+                return ['code' => $scan['code'] ?? null, 'action' => $scan['action'] ?? null, 'status' => 'failed', 'error' => $exception->getMessage() ?: 'This scan could not be applied.'];
+            }
+        });
+
+        return response()->json(['applied' => $results->where('status', 'applied')->count(), 'failed' => $results->where('status', 'failed')->count(), 'results' => $results->values()]);
+    }
+
+    /** @return array<string, mixed> */
+    private function scanRules(): array
+    {
+        return [
             'code' => ['required', 'string', 'max:191'],
             'action' => ['required', 'in:check_in,board,absent'],
             'device_id' => ['nullable', 'string', 'max:100'],
             'offline_recorded_at' => ['nullable', 'date', 'before_or_equal:now'],
-        ]);
+        ];
+    }
 
-        $payload = DB::transaction(function () use ($request, $validated): array {
+    /** @param array<string, mixed> $validated */
+    private function processScan(Request $request, array $validated): array
+    {
+        return DB::transaction(function () use ($request, $validated): array {
             $ticket = Ticket::query()
                 ->where(fn ($query) => $query->where('qr_token', $validated['code'])->orWhere('ticket_number', $validated['code']))
                 ->with(['passenger.seat', 'passenger.booking.trip'])
@@ -74,8 +112,6 @@ class BoardingController extends Controller
 
             return $this->ticketPayload($ticket->refresh()->load(['passenger.seat', 'passenger.booking']));
         });
-
-        return response()->json($payload);
     }
 
     private function authorizeTrip(Request $request, Trip $trip): void

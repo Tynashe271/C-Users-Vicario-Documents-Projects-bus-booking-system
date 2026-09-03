@@ -10,7 +10,7 @@ class Trip extends Model
 
     protected function casts(): array
     {
-        return ['departs_at' => 'datetime', 'arrives_at' => 'datetime', 'base_fare' => 'decimal:2'];
+        return ['departs_at' => 'datetime', 'arrives_at' => 'datetime', 'base_fare' => 'decimal:2', 'boarding_started_at' => 'datetime', 'departed_at' => 'datetime', 'arrived_at' => 'datetime', 'completed_at' => 'datetime', 'delayed_at' => 'datetime', 'cancelled_at' => 'datetime'];
     }
 
     public function route()

@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\Booking;
 use App\Models\BookingPassenger;
+use App\Models\Payment;
+use App\Models\PlatformResource;
 use App\Models\SeatLock;
 use App\Models\Ticket;
 use App\Models\Trip;
@@ -69,6 +71,9 @@ class BookingService
                     throw ValidationException::withMessages(['passengers' => 'Passenger seats must match the held seats.']);
                 }
                 $quote = $this->pricing->quote($trip, $data['passengers'], $data['optional_services'] ?? [], $data['coupon_code'] ?? null, true, $userId);
+                if (($data['source'] ?? null) === 'agent') {
+                    $this->assertAgentCanBook($trip, $userId, (float) $quote['total']);
+                }
                 $fareBreakdown = [...$quote, 'terms' => ['version' => config('booking.terms_version'), 'accepted_at' => now()->toIso8601String()]];
                 $booking = Booking::create(['public_id' => Str::uuid(), 'reference' => 'BK'.strtoupper(Str::random(8)), 'company_id' => $trip->company_id, 'trip_id' => $trip->id, 'user_id' => $userId,
                     'contact_name' => $data['contact_name'], 'contact_email' => $data['contact_email'], 'contact_phone' => $data['contact_phone'], 'subtotal' => $quote['subtotal'], 'discount' => $quote['discount'], 'taxes' => $quote['taxes'], 'fees' => $quote['fees'], 'platform_fee' => $quote['platform_fee'], 'total' => $quote['total'], 'currency' => $trip->currency, 'booking_type' => $data['booking_type'] ?? 'single', 'source' => $data['source'] ?? 'web', 'journey_group' => $data['journey_group'] ?? null, 'fare_breakdown' => $fareBreakdown, 'payable_until' => $locks->min('expires_at')]);
@@ -86,6 +91,18 @@ class BookingService
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages(['seats' => 'One or more seats were booked by another passenger.']);
         }
+    }
+
+    /**
+     * A booking made with source "agent" must come from a verified, active agent, and the
+     * booking's total must sit within that agent's transaction limit (when one is set).
+     */
+    private function assertAgentCanBook(Trip $trip, ?int $userId, float $total): void
+    {
+        abort_unless($userId, 422, 'An agent booking requires an authenticated agent account.');
+        $agent = (new PlatformResource)->useModule('agents')->newQuery()->where('company_id', $trip->company_id)->where('user_id', $userId)->first();
+        abort_unless($agent && $agent->status === 'approved', 403, 'This account is not an approved agent for this operator.');
+        abort_if($agent->amount !== null && $total > (float) $agent->amount, 422, 'This booking exceeds the agent\'s transaction limit.');
     }
 
     public function releaseExpiredBookings(): int
@@ -140,5 +157,20 @@ class BookingService
         }
 
         $delivery->queue($booking->refresh()->load('passengers.ticket', 'trip'));
+    }
+
+    /**
+     * The shared "a payment has fully settled this booking" sequence: confirm the booking and its
+     * passengers, issue tickets, allocate commission, notify the passenger, and sync trip occupancy.
+     * Used both for real gateway payments and for bookings settled another way (e.g. corporate credit).
+     */
+    public function confirmPaidBooking(Booking $booking, Payment $payment, FinanceService $financeService, TicketDeliveryService $delivery, PassengerJourneyNotificationService $notifications, TripOccupancyService $occupancy): void
+    {
+        $booking->update(['status' => 'confirmed', 'payable_until' => null]);
+        $booking->passengers()->update(['status' => 'confirmed']);
+        $this->issueTickets($booking->load('passengers'), $delivery);
+        $financeService->allocateConfirmedBooking($booking->fresh(['trip.company']), $payment);
+        $notifications->paymentConfirmed($booking->fresh());
+        $occupancy->sync($booking->trip()->firstOrFail());
     }
 }

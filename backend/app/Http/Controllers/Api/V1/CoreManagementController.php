@@ -15,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Validation\Rule;
 
 class CoreManagementController extends Controller
 {
@@ -106,10 +107,10 @@ class CoreManagementController extends Controller
 
         return match ($resource) {
             'companies' => ['name' => [$required, 'string'], 'slug' => [$required, 'string', 'max:100'], 'registration_number' => ['nullable', 'string'], 'status' => ['sometimes', 'string'], 'currency' => ['sometimes', 'string', 'size:3'], 'settings' => ['nullable', 'array']],
-            'terminals' => ['name' => [$required, 'string'], 'city' => [$required, 'string'], 'country' => [$required, 'string', 'size:2'], 'latitude' => ['nullable', 'numeric'], 'longitude' => ['nullable', 'numeric']],
+            'terminals' => ['name' => [$required, 'string'], 'city' => [$required, 'string'], 'country' => [$required, 'string', 'size:2'], 'latitude' => ['nullable', 'numeric'], 'longitude' => ['nullable', 'numeric'], 'type' => ['sometimes', Rule::in(['terminal', 'bus_station', 'pickup_point', 'dropoff_point', 'border_post'])], 'active' => ['sometimes', 'boolean'], 'operating_hours' => ['nullable', 'array'], 'contact_information' => ['nullable', 'array']],
             'buses' => ['company_id' => ['sometimes', 'exists:companies,id'], 'registration_number' => [$required, 'string'], 'model' => [$required, 'string'], 'class' => ['sometimes', 'string'], 'seat_capacity' => [$required, 'integer', 'min:1'], 'status' => ['sometimes', 'string'], 'amenities' => ['nullable', 'array']],
             'seats' => ['bus_id' => [$required, 'exists:buses,id'], 'number' => [$required, 'string'], 'type' => ['sometimes', 'string'], 'accessible' => ['sometimes', 'boolean']],
-            'routes' => ['company_id' => ['sometimes', 'exists:companies,id'], 'origin_terminal_id' => [$required, 'exists:terminals,id'], 'destination_terminal_id' => [$required, 'different:origin_terminal_id', 'exists:terminals,id'], 'name' => [$required, 'string'], 'distance_km' => ['nullable', 'integer'], 'duration_minutes' => [$required, 'integer', 'min:1'], 'active' => ['sometimes', 'boolean']],
+            'routes' => ['company_id' => ['sometimes', 'exists:companies,id'], 'origin_terminal_id' => [$required, 'exists:terminals,id'], 'destination_terminal_id' => [$required, 'different:origin_terminal_id', 'exists:terminals,id'], 'name' => [$required, 'string'], 'distance_km' => ['nullable', 'integer'], 'duration_minutes' => [$required, 'integer', 'min:1'], 'active' => ['sometimes', 'boolean'], 'status' => ['sometimes', Rule::in(['draft', 'active', 'suspended', 'retired'])], 'border_information' => ['nullable', 'array']],
             'trips' => ['company_id' => ['sometimes', 'exists:companies,id'], 'route_id' => [$required, 'exists:routes,id'], 'bus_id' => [$required, 'exists:buses,id'], 'departs_at' => [$required, 'date'], 'arrives_at' => [$required, 'date', 'after:departs_at'], 'base_fare' => [$required, 'numeric', 'min:0'], 'currency' => [$required, 'string', 'size:3'], 'status' => ['sometimes', 'string']],
             default => [],
         };

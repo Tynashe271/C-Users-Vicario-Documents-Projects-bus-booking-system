@@ -14,6 +14,7 @@ use App\Models\WorkingHour;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class StaffController extends Controller
@@ -66,7 +67,13 @@ class StaffController extends Controller
         abort_if($onLeave, 409, 'Employee is on approved leave.');
         $overlap = StaffAssignment::query()->where('employee_id', $employee->id)->whereIn('status', ['assigned', 'checked_in'])->where('assigned_from', '<', $trip->arrives_at)->where('assigned_until', '>', $trip->departs_at)->exists();
         abort_if($overlap, 409, 'Employee already has an overlapping assignment.');
-        $assignment = StaffAssignment::create(['company_id' => $employee->company_id, 'user_id' => $request->user()->id, 'employee_id' => $employee->id, 'trip_id' => $trip->id, 'code' => $employee->employee_number.':'.$trip->id.':'.$validated['duty_role'], 'name' => str($validated['duty_role'])->headline(), 'duty_role' => $validated['duty_role'], 'status' => 'assigned', 'assigned_from' => $trip->departs_at, 'assigned_until' => $trip->arrives_at]);
+        // Assigning a different employee to a duty role the trip already has replaces the incumbent
+        // (e.g. driver/conductor replacement) instead of double-booking the trip for that role.
+        $assignment = DB::transaction(function () use ($request, $employee, $trip, $validated): StaffAssignment {
+            StaffAssignment::query()->where('trip_id', $trip->id)->where('duty_role', $validated['duty_role'])->whereIn('status', ['assigned', 'checked_in'])->where('employee_id', '!=', $employee->id)->update(['status' => 'reassigned']);
+
+            return StaffAssignment::create(['company_id' => $employee->company_id, 'user_id' => $request->user()->id, 'employee_id' => $employee->id, 'trip_id' => $trip->id, 'code' => $employee->employee_number.':'.$trip->id.':'.$validated['duty_role'], 'name' => str($validated['duty_role'])->headline(), 'duty_role' => $validated['duty_role'], 'status' => 'assigned', 'assigned_from' => $trip->departs_at, 'assigned_until' => $trip->arrives_at]);
+        });
 
         return response()->json($assignment, 201);
     }

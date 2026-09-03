@@ -10,17 +10,18 @@ use App\Services\BookingService;
 use App\Services\FinanceService;
 use App\Services\PassengerJourneyNotificationService;
 use App\Services\TicketDeliveryService;
+use App\Services\TripOccupancyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class PaymentWebhookController extends Controller
 {
-    public function __invoke(Request $r, string $provider, BookingService $service, FinanceService $finance, TicketDeliveryService $delivery, PassengerJourneyNotificationService $notifications)
+    public function __invoke(Request $r, string $provider, BookingService $service, FinanceService $finance, TicketDeliveryService $delivery, PassengerJourneyNotificationService $notifications, TripOccupancyService $occupancy)
     {
         $secret = (string) (config("payments.providers.$provider.webhook_secret") ?: config('booking.webhook_secret'));
         abort_if($secret === '' || ! hash_equals(hash_hmac('sha256', $r->getContent(), $secret), (string) $r->header('X-Signature')), 401);
         $v = $r->validate(['event_id' => 'required|string|max:191', 'booking_reference' => 'required|string', 'provider_reference' => 'required|string', 'status' => 'required|in:paid,failed,pending', 'failure_is_permanent' => 'sometimes|boolean', 'amount' => 'required|numeric|min:0', 'currency' => 'required|string|size:3']);
-        DB::transaction(function () use ($v, $provider, $r, $service, $finance, $delivery, $notifications) {
+        DB::transaction(function () use ($v, $provider, $r, $service, $finance, $delivery, $notifications, $occupancy) {
             $booking = Booking::where('reference', $v['booking_reference'])->lockForUpdate()->firstOrFail();
             $eventKey = $provider.':'.$v['event_id'];
             $events = (new PlatformResource)->useModule('webhook_events');
@@ -41,9 +42,7 @@ class PaymentWebhookController extends Controller
                     abort_if($booking->status === 'expired' || ($booking->payable_until && $booking->payable_until->isPast()), 409, 'This booking has expired.');
                     $booking->update(['status' => 'confirmed', 'payable_until' => null]);
                     $booking->passengers()->update(['status' => 'confirmed']);
-                    $service->issueTickets($booking->load('passengers'), $delivery);
-                    $finance->allocateConfirmedBooking($booking->fresh(['trip.company']), $payment);
-                    $notifications->paymentConfirmed($booking->fresh());
+                    $service->confirmPaidBooking($booking, $payment, $finance, $delivery, $notifications, $occupancy);
                 }
             } else {
                 $payment->update(['status' => $v['status'] === 'paid' ? 'amount_mismatch' : $v['status']]);

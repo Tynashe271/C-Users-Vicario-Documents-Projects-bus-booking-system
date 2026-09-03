@@ -39,6 +39,20 @@ class AdminCompanyController extends Controller
         ]);
     }
 
+    public function updateCommission(Request $request, Company $company): JsonResponse
+    {
+        abort_unless($request->user()->can('finance.manage') || $request->user()->can('companies.manage'), 403);
+        $validated = $request->validate(['commission_rate' => ['required', 'numeric', 'between:0,100'], 'agent_commission_rate' => ['nullable', 'numeric', 'between:0,100']]);
+        $previous = $company->settings ?? [];
+        $company->update(['settings' => [...$previous, 'commission_rate' => $validated['commission_rate'], ...(isset($validated['agent_commission_rate']) ? ['agent_commission_rate' => $validated['agent_commission_rate']] : [])]]);
+        (new PlatformResource)->useModule('audit_logs')->fill([
+            'company_id' => $company->id, 'user_id' => $request->user()->id, 'code' => 'company.commission.changed.'.Str::uuid(), 'name' => 'Company commission rate changed', 'status' => 'recorded',
+            'data' => ['record_type' => Company::class, 'record_id' => $company->id, 'previous' => ['commission_rate' => $previous['commission_rate'] ?? null], 'new' => ['commission_rate' => $validated['commission_rate']], 'ip_address' => $request->ip()],
+        ])->save();
+
+        return response()->json($company->refresh());
+    }
+
     public function updateStatus(Request $request, Company $company): JsonResponse
     {
         abort_unless($request->user()->can('companies.manage'), 403);

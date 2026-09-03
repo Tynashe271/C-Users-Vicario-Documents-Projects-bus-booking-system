@@ -29,6 +29,21 @@ class AdminOperationsTest extends TestCase
             ->assertJsonMissingPath('data.0.two_factor_secret');
     }
 
+    public function test_super_administrator_can_revise_a_companys_commission_rate_and_see_it_on_the_dashboard(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $admin = User::factory()->create(['role' => 'super_administrator']);
+        $admin->assignRole('super_administrator');
+        $company = Company::create(['name' => 'Road Star', 'slug' => 'road-star-commission', 'settings' => ['commission_rate' => 5]]);
+        Sanctum::actingAs($admin);
+
+        $this->patchJson("/api/v1/admin/companies/{$company->id}/commission", ['commission_rate' => 8, 'agent_commission_rate' => 3])
+            ->assertOk()->assertJsonPath('settings.commission_rate', 8)->assertJsonPath('settings.agent_commission_rate', 3);
+        $this->assertDatabaseHas('audit_logs', ['company_id' => $company->id, 'name' => 'Company commission rate changed']);
+
+        $this->getJson('/api/v1/admin/dashboard')->assertOk()->assertJsonPath('security_alerts', 0);
+    }
+
     public function test_company_administrator_cannot_monitor_other_companies(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);

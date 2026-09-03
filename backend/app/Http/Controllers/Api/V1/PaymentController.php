@@ -10,6 +10,7 @@ use App\Services\BookingService;
 use App\Services\FinanceService;
 use App\Services\PassengerJourneyNotificationService;
 use App\Services\TicketDeliveryService;
+use App\Services\TripOccupancyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +19,7 @@ use Throwable;
 
 class PaymentController extends Controller
 {
-    public function store(Request $request, Booking $booking, PaymentGateway $gateway, BookingService $bookingService, FinanceService $financeService, TicketDeliveryService $delivery, PassengerJourneyNotificationService $notifications): JsonResponse
+    public function store(Request $request, Booking $booking, PaymentGateway $gateway, BookingService $bookingService, FinanceService $financeService, TicketDeliveryService $delivery, PassengerJourneyNotificationService $notifications, TripOccupancyService $occupancy): JsonResponse
     {
         $user = $request->user();
         $allowed = $request->routeIs('guest.payments.store')
@@ -52,7 +53,7 @@ class PaymentController extends Controller
             abort_unless($booking->user_id !== null, 422, 'Passenger wallet payment requires an account.');
             $financeService->payFromPassengerWallet($booking, $payment, $booking->user_id, $validated['context']['pin'] ?? null);
             $payment = $payment->refresh();
-            $this->completeBooking($booking, $payment, $bookingService, $financeService, $delivery, $notifications);
+            $this->completeBooking($booking, $payment, $bookingService, $financeService, $delivery, $notifications, $occupancy);
 
             return response()->json($payment, 201);
         }
@@ -61,7 +62,7 @@ class PaymentController extends Controller
             $result = $gateway->initiate($validated['provider'], $booking, (float) $validated['amount'], $idempotencyKey, $validated['context'] ?? []);
             $payment->update(['provider_reference' => $result['provider_reference'], 'status' => $result['status'], 'provider_payload' => $result, 'paid_at' => $result['status'] === 'paid' ? now() : null]);
             if ($result['status'] === 'paid') {
-                $this->completeBooking($booking, $payment, $bookingService, $financeService, $delivery, $notifications);
+                $this->completeBooking($booking, $payment, $bookingService, $financeService, $delivery, $notifications, $occupancy);
             } elseif ($result['status'] === 'failed') {
                 $bookingService->releaseAfterPermanentPaymentFailure($booking);
             }
@@ -74,20 +75,16 @@ class PaymentController extends Controller
         return response()->json($payment->refresh(), 201);
     }
 
-    private function completeBooking(Booking $booking, Payment $payment, BookingService $bookingService, FinanceService $financeService, TicketDeliveryService $delivery, PassengerJourneyNotificationService $notifications): void
+    private function completeBooking(Booking $booking, Payment $payment, BookingService $bookingService, FinanceService $financeService, TicketDeliveryService $delivery, PassengerJourneyNotificationService $notifications, TripOccupancyService $occupancy): void
     {
-        DB::transaction(function () use ($booking, $payment, $bookingService, $financeService, $delivery, $notifications): void {
+        DB::transaction(function () use ($booking, $payment, $bookingService, $financeService, $delivery, $notifications, $occupancy): void {
             $booking = Booking::whereKey($booking->id)->lockForUpdate()->firstOrFail();
             $paid = (float) Payment::where('booking_id', $booking->id)->where('status', 'paid')->sum('amount');
             if ($paid < (float) $booking->total) {
                 return;
             }
 
-            $booking->update(['status' => 'confirmed', 'payable_until' => null]);
-            $booking->passengers()->update(['status' => 'confirmed']);
-            $bookingService->issueTickets($booking->load('passengers'), $delivery);
-            $financeService->allocateConfirmedBooking($booking->fresh(['trip.company']), $payment);
-            $notifications->paymentConfirmed($booking->fresh());
+            $bookingService->confirmPaidBooking($booking, $payment, $financeService, $delivery, $notifications, $occupancy);
         });
     }
 

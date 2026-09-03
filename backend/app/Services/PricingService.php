@@ -35,6 +35,9 @@ class PricingService
                 if (($conditions['route_id'] ?? $trip->route_id) !== $trip->route_id || ($conditions['passenger_type'] ?? $passenger['type']) !== $passenger['type']) {
                     continue;
                 }
+                if (! $this->conditionsMatchTrip($conditions, $trip)) {
+                    continue;
+                }
                 $fare = match ($conditions['adjustment_type'] ?? 'percentage') {
                     'fixed' => $fare + (float) $rule->amount,
                     'override' => (float) $rule->amount,
@@ -66,6 +69,31 @@ class PricingService
         $total = round($subtotal - $discount + $taxes + $terminalCharges + $serviceFee + $platformFee, 2);
 
         return ['base_fare' => round((float) $trip->base_fare, 2), 'subtotal' => $subtotal, 'discount' => $discount, 'taxes' => $taxes, 'terminal_charges' => $terminalCharges, 'fees' => $serviceFee + $terminalCharges, 'platform_fee' => $platformFee, 'total' => $total, 'passenger_fares' => $passengerFares, 'services' => $selectedServices, 'coupon' => $couponCode];
+    }
+
+    /**
+     * Beyond the always-checked route/passenger-type match, a fare rule's `data` may further
+     * scope it to weekend/peak-period departures (`days_of_week`, `hour_range`) or to bookings
+     * made a minimum number of days ahead of departure (`min_days_before_departure`).
+     *
+     * @param  array<string, mixed>  $conditions
+     */
+    private function conditionsMatchTrip(array $conditions, Trip $trip): bool
+    {
+        if (isset($conditions['days_of_week']) && ! in_array($trip->departs_at->isoWeekday(), $conditions['days_of_week'], true)) {
+            return false;
+        }
+        if (isset($conditions['hour_range']['from'], $conditions['hour_range']['to'])) {
+            $departureTime = $trip->departs_at->format('H:i');
+            if ($departureTime < $conditions['hour_range']['from'] || $departureTime > $conditions['hour_range']['to']) {
+                return false;
+            }
+        }
+        if (isset($conditions['min_days_before_departure']) && now()->diffInDays($trip->departs_at, false) < (float) $conditions['min_days_before_departure']) {
+            return false;
+        }
+
+        return true;
     }
 
     private function couponDiscount(Trip $trip, ?string $code, float $subtotal, int $passengerCount, bool $redeem, ?int $userId): float

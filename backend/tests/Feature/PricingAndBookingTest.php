@@ -5,12 +5,14 @@ namespace Tests\Feature;
 use App\Models\Bus;
 use App\Models\Company;
 use App\Models\Coupon;
+use App\Models\FareRule;
 use App\Models\Seat;
 use App\Models\Terminal;
 use App\Models\TransportRoute;
 use App\Models\Trip;
 use App\Models\User;
 use App\Services\BookingService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -82,6 +84,25 @@ class PricingAndBookingTest extends TestCase
 
         $this->actingAs(User::factory()->create())->postJson("/api/v1/trips/{$trip->id}/quote", ['passengers' => [['type' => 'adult']], 'coupon_code' => 'PRIVATE'])
             ->assertUnprocessable()->assertJsonValidationErrors('coupon_code');
+    }
+
+    public function test_fare_rules_apply_only_when_weekend_peak_hour_and_lead_time_conditions_match(): void
+    {
+        $company = Company::create(['name' => 'Operator', 'slug' => 'operator-fare-rules']);
+        $origin = Terminal::create(['name' => 'Harare', 'city' => 'Harare', 'country' => 'ZW']);
+        $destination = Terminal::create(['name' => 'Mutare', 'city' => 'Mutare', 'country' => 'ZW']);
+        $route = TransportRoute::create(['company_id' => $company->id, 'origin_terminal_id' => $origin->id, 'destination_terminal_id' => $destination->id, 'name' => 'Harare-Mutare', 'duration_minutes' => 240]);
+        $bus = Bus::create(['company_id' => $company->id, 'registration_number' => 'FARE123', 'model' => 'Scania', 'seat_capacity' => 1]);
+        $departure = now()->addDays(10)->next(Carbon::SATURDAY)->setTime(18, 0);
+        $trip = Trip::create(['company_id' => $company->id, 'route_id' => $route->id, 'bus_id' => $bus->id, 'departs_at' => $departure, 'arrives_at' => $departure->copy()->addHours(4), 'base_fare' => 100, 'currency' => 'USD', 'status' => 'published']);
+
+        FareRule::create(['company_id' => $company->id, 'code' => 'WEEKEND', 'name' => 'Weekend surcharge', 'status' => 'active', 'amount' => 20, 'currency' => 'USD', 'data' => ['passenger_type' => 'adult', 'adjustment_type' => 'percentage', 'days_of_week' => [6, 7]]]);
+        FareRule::create(['company_id' => $company->id, 'code' => 'MORNING-OFFPEAK', 'name' => 'Morning off-peak discount (should not match an 18:00 departure)', 'status' => 'active', 'amount' => -50, 'currency' => 'USD', 'data' => ['passenger_type' => 'adult', 'adjustment_type' => 'percentage', 'hour_range' => ['from' => '05:00', 'to' => '08:00']]]);
+        FareRule::create(['company_id' => $company->id, 'code' => 'LAST-MINUTE', 'name' => 'Requires 30+ days notice (should not match a 10-day-out booking)', 'status' => 'active', 'amount' => -50, 'currency' => 'USD', 'data' => ['passenger_type' => 'adult', 'adjustment_type' => 'percentage', 'min_days_before_departure' => 30]]);
+
+        $quote = $this->postJson("/api/v1/trips/{$trip->id}/quote", ['passengers' => [['type' => 'adult']]])->assertOk()->json();
+        // Only the weekend surcharge applies: 100 * 1.20 = 120.
+        $this->assertEqualsWithDelta(120.0, $quote['passenger_fares'][0], 0.001);
     }
 
     public function test_booking_conditions_must_be_accepted(): void

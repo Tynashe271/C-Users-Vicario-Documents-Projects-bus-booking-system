@@ -60,6 +60,25 @@ class BoardingManagementTest extends TestCase
         $this->actingAs($officer)->postJson('/api/v1/boarding/scans', ['code' => $ticket->qr_token, 'action' => 'check_in'])->assertNotFound();
     }
 
+    public function test_offline_scans_sync_in_batch_and_report_a_per_scan_outcome(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        [$company, , $ticket] = $this->ticketFixture();
+        $officer = User::factory()->create(['company_id' => $company->id, 'role' => 'terminal_officer']);
+        $officer->assignRole('terminal_officer');
+
+        $response = $this->actingAs($officer)->postJson('/api/v1/boarding/scans/sync', ['scans' => [
+            ['code' => $ticket->qr_token, 'action' => 'check_in', 'device_id' => 'gate-1', 'offline_recorded_at' => now()->subMinutes(20)->toIso8601String()],
+            ['code' => 'UNKNOWN-CODE', 'action' => 'check_in'],
+        ]])->assertOk();
+
+        $response->assertJsonPath('applied', 1)->assertJsonPath('failed', 1);
+        $this->assertSame('applied', $response->json('results.0.status'));
+        $this->assertSame('failed', $response->json('results.1.status'));
+        $this->assertDatabaseHas('tickets', ['id' => $ticket->id]);
+        $this->assertNotNull($ticket->fresh()->checked_in_at);
+    }
+
     /** @return array{Company, Trip, Ticket} */
     private function ticketFixture(): array
     {

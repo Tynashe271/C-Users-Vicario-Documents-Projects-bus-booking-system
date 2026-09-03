@@ -48,6 +48,7 @@ class AdminDashboardController extends Controller
             'pending_refunds' => (new PlatformResource)->useModule('refunds')->newQuery()->whereIn('status', ['pending', 'requested', 'under_review', 'approved'])->count(),
             'pending_settlements' => Settlement::whereIn('status', ['draft', 'pending_approval', 'approved'])->count(),
             'open_support_cases' => SupportCase::whereNotIn('status', ['resolved', 'closed'])->count(),
+            'security_alerts' => (new PlatformResource)->useModule('security_events')->newQuery()->whereIn('status', ['open', 'flagged'])->count(),
             'recent_activities' => $auditQuery->latest('created_at')->latest('id')->limit(10)->get(),
         ]);
     }
