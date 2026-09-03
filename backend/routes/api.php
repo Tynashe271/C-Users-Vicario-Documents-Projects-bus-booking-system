@@ -264,8 +264,10 @@ Route::prefix('v1')->group(function (): void {
         Route::put('/management/routes/{route}/stops/{stop}', [RouteManagementController::class, 'update']);
         Route::delete('/management/routes/{route}/stops/{stop}', [RouteManagementController::class, 'destroy']);
         Route::get('/management/routes/{route}/profitability', [RouteManagementController::class, 'profitability']);
+        Route::put('/management/routes/{route}/commission', [RouteManagementController::class, 'updateCommission']);
         Route::get('/trip-management', [TripManagementController::class, 'index']);
         Route::get('/trip-management/dashboard', [TripManagementController::class, 'dashboard']);
+        Route::get('/trip-management/low-occupancy-alerts', [TripManagementController::class, 'lowOccupancyAlerts']);
         Route::post('/trips/{trip}/publication', [TripManagementController::class, 'publish']);
         Route::post('/trips/{trip}/duplication', [TripManagementController::class, 'duplicate']);
         Route::post('/trips/{trip}/delay', [TripManagementController::class, 'delay']);

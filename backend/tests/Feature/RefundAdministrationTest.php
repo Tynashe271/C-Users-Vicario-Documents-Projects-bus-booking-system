@@ -37,6 +37,7 @@ class RefundAdministrationTest extends TestCase
 
         $this->postJson("/api/v1/refunds/{$refundId}/approval")->assertOk()->assertJsonPath('status', 'approved');
         $this->assertDatabaseHas('payments', ['booking_id' => $booking->id, 'amount' => -80, 'status' => 'refund_pending']);
+        $this->assertDatabaseHas('audit_logs', ['company_id' => $company->id, 'name' => 'Refund approved']);
 
         // A decided refund cannot be approved again, and the report reflects it.
         $this->postJson("/api/v1/refunds/{$refundId}/approval")->assertStatus(409);
@@ -57,6 +58,7 @@ class RefundAdministrationTest extends TestCase
         $walletRefundId = collect($refunds)->firstWhere('code', $walletBooking->reference)['id'];
 
         $this->postJson("/api/v1/refunds/{$rejectId}/rejection", ['reason' => 'Fraudulent claim'])->assertOk()->assertJsonPath('status', 'rejected');
+        $this->assertDatabaseHas('audit_logs', ['company_id' => $company->id, 'name' => 'Refund rejected']);
 
         $wallet = app(WalletService::class)->account($passengerUser);
         $this->assertSame(0.0, (float) $wallet->balance);

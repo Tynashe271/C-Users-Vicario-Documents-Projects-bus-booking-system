@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Company;
+use App\Models\PlatformResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class CompanyProfileController extends Controller
 {
@@ -31,6 +33,12 @@ class CompanyProfileController extends Controller
             'rescheduling_policy' => ['sometimes', 'array'], 'luggage_policy' => ['sometimes', 'array'], 'boarding_policy' => ['sometimes', 'array'],
             'notification_templates' => ['sometimes', 'array'], 'ticket_design' => ['sometimes', 'array'], 'settlement_information' => ['sometimes', 'array'],
         ]);
+        if (array_key_exists('bank_details', $validated)) {
+            (new PlatformResource)->useModule('audit_logs')->fill([
+                'company_id' => $company->id, 'user_id' => $request->user()->id, 'code' => 'company.bank_details.changed.'.Str::uuid(), 'name' => 'Company bank details changed', 'status' => 'recorded',
+                'data' => ['record_type' => Company::class, 'record_id' => $company->id, 'ip_address' => $request->ip()],
+            ])->save();
+        }
         $company->update($validated);
 
         return response()->json(['data' => $company->refresh(), 'bank_details' => $company->bank_details]);

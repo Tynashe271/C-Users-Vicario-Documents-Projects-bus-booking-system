@@ -58,9 +58,33 @@ class RouteManagementController extends Controller
         return response()->json(['trips_operated' => $tripIds->count(), 'revenue' => round($revenue, 2), 'expenses' => round($expenses, 2), 'profit' => round($revenue - $expenses, 2)]);
     }
 
+    /**
+     * Route-specific commission tiers: whichever tier a booking's charge on this route falls into
+     * (see TransportRoute::commissionRate()) overrides the operator's flat commission_rate for that
+     * booking's platform fee, calculated in PricingService::quote() at booking time.
+     */
+    public function updateCommission(Request $request, TransportRoute $route): JsonResponse
+    {
+        $this->authorizeCommission($request, $route);
+        $validated = $request->validate([
+            'commission_tiers' => ['nullable', 'array'],
+            'commission_tiers.*.min_amount' => ['required', 'numeric', 'min:0'],
+            'commission_tiers.*.max_amount' => ['nullable', 'numeric', 'gt:commission_tiers.*.min_amount'],
+            'commission_tiers.*.rate_percent' => ['required', 'numeric', 'between:0,100'],
+        ]);
+        $route->update(['commission_tiers' => $validated['commission_tiers'] ?? null]);
+
+        return response()->json($route->refresh());
+    }
+
     private function authorizeRoute(Request $request, TransportRoute $route): void
     {
         abort_unless($request->user()->can('routes.manage') && $request->user()->company_id === $route->company_id, 404);
+    }
+
+    private function authorizeCommission(Request $request, TransportRoute $route): void
+    {
+        abort_unless(($request->user()->can('finance.manage') || $request->user()->can('companies.manage')) && $request->user()->company_id === $route->company_id, 404);
     }
 
     /** @return array<string, mixed> */

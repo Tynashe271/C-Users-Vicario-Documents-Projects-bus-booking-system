@@ -25,6 +25,7 @@ class CompanyOperationsTest extends TestCase
 
         $this->actingAs($owner)->putJson('/api/v1/company/profile', ['trading_name' => 'Road Star Express', 'contact_people' => [['name' => 'Help Desk', 'email' => 'help@example.com']], 'bank_details' => ['bank_name' => 'City Bank', 'account_name' => 'Road Star', 'account_number' => '12345'], 'support_information' => ['phone' => '+263770000000'], 'booking_policy' => ['check_in_minutes' => 30], 'cancellation_policy' => ['refund_before_hours' => 24]])
             ->assertOk()->assertJsonPath('data.trading_name', 'Road Star Express')->assertJsonPath('bank_details.account_number', '12345');
+        $this->assertDatabaseHas('audit_logs', ['company_id' => $company->id, 'name' => 'Company bank details changed']);
 
         $branchId = $this->actingAs($owner)->postJson('/api/v1/branches', ['name' => 'Harare', 'code' => 'HRE', 'address' => ['city' => 'Harare'], 'operating_hours' => ['monday' => ['08:00', '18:00']]])->assertCreated()->json('data.id');
         $staff = User::factory()->create(['company_id' => $company->id, 'branch_id' => $branchId, 'role' => 'booking_clerk']);

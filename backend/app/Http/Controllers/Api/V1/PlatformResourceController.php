@@ -94,7 +94,7 @@ class PlatformResourceController extends Controller
         return $module;
     }
 
-    private function isPlatformUser(string $role): bool
+    private function isPlatformUser(?string $role): bool
     {
         return in_array($role, config('platform.platform_roles'), true);
     }
@@ -112,7 +112,7 @@ class PlatformResourceController extends Controller
         $permission = match (true) {
             str_contains($module, 'agent') => 'agents.manage',
             str_contains($module, 'parcel') || $module === 'collection_proofs' => 'parcels.manage',
-            str_contains($module, 'support') || in_array($module, ['lost_properties', 'faq_articles'], true) => 'support.manage',
+            str_contains($module, 'support') || in_array($module, ['lost_properties', 'faq_articles', 'response_templates'], true) => 'support.manage',
             str_contains($module, 'campaign') || in_array($module, ['promotions', 'coupons', 'featured_listings', 'review_moderations'], true) => 'marketing.manage',
             str_contains($module, 'security') || str_contains($module, 'audit') || str_contains($module, 'api_client') => 'security.manage',
             str_contains($module, 'report') || str_contains($module, 'analytics') => 'reports.view',

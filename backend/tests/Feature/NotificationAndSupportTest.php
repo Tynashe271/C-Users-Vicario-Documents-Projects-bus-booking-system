@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\Company;
 use App\Models\NotificationRecord;
 use App\Models\PlatformResource;
 use App\Models\User;
+use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -59,5 +61,22 @@ class NotificationAndSupportTest extends TestCase
         ])->assertCreated()->assertJsonPath('message', 'The issue is still unresolved.');
 
         $this->assertDatabaseHas('support_messages', ['support_case_id' => $caseId, 'user_id' => $passenger->id]);
+    }
+
+    public function test_a_safety_report_can_be_opened_and_support_staff_can_manage_response_templates(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $passenger = User::factory()->create();
+        $company = Company::create(['name' => 'Road Star', 'slug' => 'road-star-support-templates']);
+        $officer = User::factory()->create(['company_id' => $company->id, 'role' => 'customer_support_agent']);
+        $officer->assignRole('customer_support_agent');
+
+        $this->actingAs($passenger)->postJson('/api/v1/support-cases', ['category' => 'safety', 'priority' => 'urgent', 'subject' => 'Driver was speeding', 'description' => 'The driver was speeding on the highway.'])
+            ->assertCreated()->assertJsonPath('priority', 'urgent');
+
+        $templateId = $this->actingAs($officer)->postJson('/api/v1/modules/response_templates/records', ['name' => 'Safety acknowledgement', 'data' => ['category' => 'safety', 'body' => 'Thank you for the report, our safety team is investigating.']])
+            ->assertCreated()->json('id');
+        $this->actingAs($officer)->getJson('/api/v1/modules/response_templates/records')->assertOk()->assertJsonPath('data.0.name', 'Safety acknowledgement');
+        $this->actingAs($passenger)->getJson("/api/v1/modules/response_templates/records/{$templateId}")->assertForbidden();
     }
 }

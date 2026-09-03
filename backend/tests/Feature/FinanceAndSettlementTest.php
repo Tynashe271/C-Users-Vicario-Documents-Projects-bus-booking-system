@@ -46,6 +46,8 @@ class FinanceAndSettlementTest extends TestCase
         $this->assertDatabaseHas('wallets', ['company_id' => $company->id, 'wallet_type' => 'operator', 'balance' => 0, 'held_balance' => 0]);
         $this->assertDatabaseHas('commissions', ['booking_id' => $booking->id, 'status' => 'settled']);
         $this->actingAs($payer)->getJson('/api/v1/finance/dashboard')->assertOk()->assertJsonPath('gross_booking_value', 110)->assertJsonPath('unsettled_amount', 0);
+        $this->assertDatabaseHas('audit_logs', ['company_id' => $company->id, 'name' => 'Settlement approved']);
+        $this->assertDatabaseHas('audit_logs', ['company_id' => $company->id, 'name' => 'Settlement paid']);
     }
 
     public function test_reconciliation_reports_provider_difference_and_is_tenant_scoped(): void

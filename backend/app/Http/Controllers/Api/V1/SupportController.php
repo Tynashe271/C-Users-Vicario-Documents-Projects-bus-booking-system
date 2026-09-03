@@ -33,7 +33,7 @@ class SupportController extends Controller
 
     public function store(Request $request, NotificationService $notifications): JsonResponse
     {
-        $validated = $request->validate(['booking_id' => ['nullable', 'integer', 'exists:bookings,id'], 'parcel_id' => ['nullable', 'integer', 'exists:parcels,id'], 'category' => ['required', Rule::in(['booking', 'payment', 'refund', 'boarding', 'luggage', 'parcel', 'account', 'complaint', 'lost_item', 'other'])], 'priority' => ['nullable', Rule::in(['low', 'normal', 'high', 'urgent'])], 'subject' => ['required', 'string', 'max:200'], 'description' => ['required', 'string', 'max:5000'], 'attachments' => ['nullable', 'array', 'max:5'], 'attachments.*' => ['string', 'max:2048']]);
+        $validated = $request->validate(['booking_id' => ['nullable', 'integer', 'exists:bookings,id'], 'parcel_id' => ['nullable', 'integer', 'exists:parcels,id'], 'category' => ['required', Rule::in(['booking', 'payment', 'refund', 'boarding', 'luggage', 'parcel', 'account', 'complaint', 'lost_item', 'safety', 'technical', 'other'])], 'priority' => ['nullable', Rule::in(['low', 'normal', 'high', 'urgent'])], 'subject' => ['required', 'string', 'max:200'], 'description' => ['required', 'string', 'max:5000'], 'attachments' => ['nullable', 'array', 'max:5'], 'attachments.*' => ['string', 'max:2048']]);
         $companyId = null;
         if (isset($validated['booking_id'])) {
             $booking = Booking::findOrFail($validated['booking_id']);

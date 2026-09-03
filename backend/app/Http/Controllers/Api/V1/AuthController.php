@@ -7,6 +7,7 @@ use App\Models\PlatformResource;
 use App\Models\SecurityAudit;
 use App\Models\User;
 use App\Services\AuthenticationTokenService;
+use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -42,7 +43,7 @@ class AuthController extends Controller
         return response()->json($tokens->issue($user, $validated['device_name'], $request), 201);
     }
 
-    public function login(Request $request, AuthenticationTokenService $tokens): JsonResponse
+    public function login(Request $request, AuthenticationTokenService $tokens, NotificationService $notifications): JsonResponse
     {
         $validated = $request->validate(['login' => ['required_without:email', 'string', 'max:255'], 'email' => ['required_without:login', 'nullable', 'string', 'max:255'], 'password' => ['required', 'string'], 'device_name' => ['required', 'string', 'max:100']]);
         $identifier = $validated['login'] ?? $validated['email'];
@@ -54,7 +55,11 @@ class AuthController extends Controller
         if (! $user || ! Hash::check($validated['password'], $user->password)) {
             if ($user) {
                 $attempts = $user->failed_login_attempts + 1;
-                $user->forceFill(['failed_login_attempts' => $attempts, 'locked_until' => $attempts >= 5 ? now()->addMinutes(15) : null])->save();
+                $justLocked = $attempts >= 5;
+                $user->forceFill(['failed_login_attempts' => $attempts, 'locked_until' => $justLocked ? now()->addMinutes(15) : null])->save();
+                if ($justLocked) {
+                    $notifications->send($user, 'suspicious_login', 'Unusual sign-in activity', 'Your account was temporarily locked after several failed sign-in attempts. If this wasn\'t you, consider changing your password.', ['ip_address' => $request->ip(), 'locked_until' => $user->locked_until->toIso8601String()], ['email', 'in_app'], 'account-locked:'.$user->id.':'.$user->locked_until->timestamp);
+                }
             }
             $this->auditLogin($request, $user, $identifier, 'login_failed');
             throw ValidationException::withMessages(['login' => 'The supplied credentials are invalid.']);

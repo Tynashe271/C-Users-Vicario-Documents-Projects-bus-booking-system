@@ -40,6 +40,31 @@ class TripManagementController extends Controller
         return response()->json(['by_status' => $statuses, 'departing_today' => $today, 'delayed_trips' => $delayed]);
     }
 
+    /**
+     * Trips departing soon that are still well under capacity — a plain threshold query, not a
+     * prediction. Useful for a manual call: promote the fare, add a departure reminder push, or
+     * consolidate onto another trip.
+     */
+    public function lowOccupancyAlerts(Request $request): JsonResponse
+    {
+        $companyId = $this->companyId($request);
+        $validated = $request->validate(['hours_ahead' => ['sometimes', 'integer', 'between:1,168'], 'threshold_percent' => ['sometimes', 'numeric', 'between:1,100']]);
+        $hoursAhead = $validated['hours_ahead'] ?? 48;
+        $threshold = $validated['threshold_percent'] ?? 40;
+        $trips = Trip::query()->where('company_id', $companyId)->whereIn('status', ['published', 'available', 'almost_full'])
+            ->whereBetween('departs_at', [now(), now()->addHours($hoursAhead)])
+            ->with(['route.origin', 'route.destination', 'bus:id,seat_capacity,registration_number'])->orderBy('departs_at')->get();
+
+        $alerts = $trips->map(function (Trip $trip): array {
+            $capacity = $trip->bus?->seat_capacity ?: 0;
+            $confirmed = (int) $trip->bookings()->withCount(['passengers' => fn (Builder $query) => $query->where('status', 'confirmed')])->get()->sum('passengers_count');
+
+            return ['trip_id' => $trip->id, 'departs_at' => $trip->departs_at->toIso8601String(), 'route' => $trip->route?->name, 'bus' => $trip->bus?->registration_number, 'capacity' => $capacity, 'confirmed_passengers' => $confirmed, 'occupancy_percent' => $capacity > 0 ? round($confirmed / $capacity * 100, 2) : 0.0];
+        })->filter(fn (array $alert): bool => $alert['occupancy_percent'] < $threshold)->values();
+
+        return response()->json(['threshold_percent' => $threshold, 'hours_ahead' => $hoursAhead, 'trips' => $alerts]);
+    }
+
     public function publish(Request $request, Trip $trip): JsonResponse
     {
         $this->authorizeTrip($request, $trip);

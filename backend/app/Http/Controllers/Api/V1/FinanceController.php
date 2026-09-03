@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Commission;
 use App\Models\Payment;
+use App\Models\PlatformResource;
 use App\Models\Reconciliation;
 use App\Models\Settlement;
 use App\Models\Wallet;
@@ -51,6 +52,7 @@ class FinanceController extends Controller
         abort_unless($settlement->status === 'draft', 409, 'Only draft settlements can be approved.');
         abort_if($settlement->user_id === $request->user()->id, 409, 'A second finance user must approve this settlement.');
         $settlement->update(['status' => 'approved', 'approved_by' => $request->user()->id, 'approved_at' => now()]);
+        $this->auditSettlement($request, $settlement, 'approved', ['net_amount' => (float) $settlement->net_amount]);
 
         return response()->json($settlement->refresh());
     }
@@ -68,6 +70,7 @@ class FinanceController extends Controller
             $settlement->items()->update(['status' => 'paid']);
             $settlement->update(['status' => 'paid', 'paid_by' => $request->user()->id, 'paid_at' => now(), 'payment_reference' => $validated['payment_reference']]);
         });
+        $this->auditSettlement($request, $settlement, 'paid', ['net_amount' => (float) $settlement->net_amount, 'payment_reference' => $validated['payment_reference']]);
 
         return response()->json($settlement->refresh()->load('items'));
     }
@@ -95,5 +98,14 @@ class FinanceController extends Controller
     private function authorizeSettlement(Request $request, Settlement $settlement): void
     {
         abort_unless($settlement->company_id === $this->companyId($request), 404);
+    }
+
+    /** @param array<string, mixed> $details */
+    private function auditSettlement(Request $request, Settlement $settlement, string $event, array $details): void
+    {
+        (new PlatformResource)->useModule('audit_logs')->fill([
+            'company_id' => $settlement->company_id, 'user_id' => $request->user()->id, 'code' => 'settlement.'.$event.'.'.Str::uuid(), 'name' => "Settlement {$event}", 'status' => 'recorded',
+            'data' => ['record_type' => Settlement::class, 'record_id' => $settlement->id, 'event' => "settlement.{$event}", ...$details, 'ip_address' => $request->ip()],
+        ])->save();
     }
 }

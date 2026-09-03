@@ -21,7 +21,7 @@ $modules = [
     'terms_acceptances', 'passenger_preferences', 'trip_comparisons', 'optional_services', 'booking_claims',
     'receipts', 'payment_methods', 'operator_policies', 'pre_trip_checklists',
     'manual_boarding_verifications', 'trip_status_updates', 'incident_attachments', 'agent_statements',
-    'review_moderations', 'financial_ledger_entries', 'collection_proofs',
+    'review_moderations', 'financial_ledger_entries', 'collection_proofs', 'response_templates',
 ];
 
 return [

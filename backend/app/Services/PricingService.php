@@ -63,7 +63,8 @@ class PricingService
         $taxRate = (float) data_get($company?->settings, 'tax_rate', 0);
         $serviceFee = (float) data_get($company?->settings, 'booking_service_fee', 0);
         $terminalCharges = (float) data_get($company?->settings, 'terminal_charge', 0);
-        $platformRate = (float) data_get($company?->settings, 'commission_rate', 0);
+        $flatCommissionRate = (float) data_get($company?->settings, 'commission_rate', 0);
+        $platformRate = $trip->route ? $trip->route->commissionRate($subtotal - $discount, $flatCommissionRate) : $flatCommissionRate;
         $taxes = round(($subtotal - $discount) * $taxRate / 100, 2);
         $platformFee = round(($subtotal - $discount) * $platformRate / 100, 2);
         $total = round($subtotal - $discount + $taxes + $terminalCharges + $serviceFee + $platformFee, 2);

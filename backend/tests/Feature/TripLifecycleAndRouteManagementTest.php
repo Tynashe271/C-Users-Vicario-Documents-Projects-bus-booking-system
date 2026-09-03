@@ -145,6 +145,24 @@ class TripLifecycleAndRouteManagementTest extends TestCase
         $this->actingAs($driverUser)->postJson("/api/v1/trips/{$trip->id}/cancellation", ['reason' => 'Test'])->assertStatus(403);
     }
 
+    public function test_low_occupancy_alerts_flag_a_near_empty_trip_departing_soon_but_not_a_full_or_distant_one(): void
+    {
+        [$company, $manager] = $this->managerFixture();
+        $bus = $this->approvedBus($company);
+        $route = $this->route($company);
+        $seat = Seat::create(['bus_id' => $bus->id, 'number' => '1A']);
+        $nearEmptyTrip = Trip::create(['company_id' => $company->id, 'route_id' => $route->id, 'bus_id' => $bus->id, 'departs_at' => now()->addHours(6), 'arrives_at' => now()->addHours(12), 'base_fare' => 30, 'currency' => 'USD', 'status' => 'published']);
+        $distantTrip = Trip::create(['company_id' => $company->id, 'route_id' => $route->id, 'bus_id' => $bus->id, 'departs_at' => now()->addDays(10), 'arrives_at' => now()->addDays(10)->addHours(6), 'base_fare' => 30, 'currency' => 'USD', 'status' => 'published']);
+
+        $booking = Booking::create(['public_id' => Str::uuid(), 'reference' => 'BKLOW1', 'company_id' => $company->id, 'trip_id' => $nearEmptyTrip->id, 'contact_name' => 'P', 'contact_phone' => '+263770000000', 'subtotal' => 30, 'total' => 30, 'currency' => 'USD', 'status' => 'confirmed']);
+        BookingPassenger::create(['booking_id' => $booking->id, 'trip_id' => $nearEmptyTrip->id, 'seat_id' => $seat->id, 'full_name' => 'P', 'type' => 'adult', 'fare' => 30, 'status' => 'confirmed']);
+
+        $alerts = $this->actingAs($manager)->getJson('/api/v1/trip-management/low-occupancy-alerts')->assertOk()->json();
+        $tripIds = collect($alerts['trips'])->pluck('trip_id');
+        $this->assertTrue($tripIds->contains($nearEmptyTrip->id));
+        $this->assertFalse($tripIds->contains($distantTrip->id));
+    }
+
     /** @return array{Company, User} */
     private function managerFixture(): array
     {

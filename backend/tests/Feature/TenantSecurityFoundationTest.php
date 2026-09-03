@@ -34,6 +34,7 @@ class TenantSecurityFoundationTest extends TestCase
         }
 
         $this->assertTrue($user->refresh()->locked_until->isFuture());
+        $this->assertDatabaseHas('notifications', ['user_id' => $user->id, 'event_type' => 'suspicious_login']);
         $this->postJson('/api/v1/auth/login', ['login' => $user->email, 'password' => 'StrongPass123', 'device_name' => 'Browser'])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('login');

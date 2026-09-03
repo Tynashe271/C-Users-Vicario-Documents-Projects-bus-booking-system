@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class RefundAdministrationController extends Controller
 {
@@ -62,6 +63,7 @@ class RefundAdministrationController extends Controller
             $record->update(['status' => 'approved', 'data' => [...($record->data ?? []), 'method' => $method, 'approved_by' => $request->user()->id, 'approved_at' => now()->toIso8601String()]]);
         });
 
+        $this->audit($request, $record, 'approved', ['amount' => $amount, 'method' => $method]);
         $notifications->refundStatus($booking, 'approved', $amount);
 
         return response()->json($record->refresh());
@@ -73,6 +75,7 @@ class RefundAdministrationController extends Controller
         abort_unless(in_array($record->status, ['pending', 'requested', 'under_review'], true), 409, 'This refund was already decided.');
         $validated = $request->validate(['reason' => ['required', 'string', 'max:1000']]);
         $record->update(['status' => 'rejected', 'data' => [...($record->data ?? []), 'rejected_by' => $request->user()->id, 'rejected_at' => now()->toIso8601String(), 'rejection_reason' => $validated['reason']]]);
+        $this->audit($request, $record, 'rejected', ['reason' => $validated['reason']]);
         $booking = Booking::find(data_get($record->data, 'booking_id'));
         if ($booking) {
             $notifications->refundStatus($booking, 'rejected', (float) $record->amount);
@@ -120,5 +123,14 @@ class RefundAdministrationController extends Controller
     private function isPlatformUser(Request $request): bool
     {
         return in_array($request->user()->role, config('platform.platform_roles'), true);
+    }
+
+    /** @param array<string, mixed> $details */
+    private function audit(Request $request, PlatformResource $refund, string $decision, array $details): void
+    {
+        (new PlatformResource)->useModule('audit_logs')->fill([
+            'company_id' => $refund->company_id, 'user_id' => $request->user()->id, 'code' => 'refund.'.$decision.'.'.Str::uuid(), 'name' => "Refund {$decision}", 'status' => 'recorded',
+            'data' => ['record_type' => PlatformResource::class, 'record_id' => $refund->id, 'event' => "refund.{$decision}", ...$details, 'ip_address' => $request->ip()],
+        ])->save();
     }
 }
