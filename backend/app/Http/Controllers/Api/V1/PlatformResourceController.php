@@ -3,9 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Models\Booking;
 use App\Models\PlatformResource;
-use App\Services\PassengerJourneyNotificationService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -53,16 +51,13 @@ class PlatformResourceController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, string $module, int $id, PassengerJourneyNotificationService $notifications): JsonResource
+    public function update(Request $request, string $module, int $id): JsonResource
     {
+        // Refund decisions move real money (wallet credit or a gateway refund) and must go through
+        // RefundAdministrationController's approve/reject actions, not a raw status edit here.
+        abort_if($module === 'refunds', 409, 'Use the refund approval/rejection endpoints to decide a refund; it cannot be edited directly.');
         $resource = $this->tenantQuery($request, $module)->findOrFail($id);
         $resource->update($this->validated($request, true));
-        if ($module === 'refunds' && data_get($resource->data, 'booking_id')) {
-            $booking = Booking::find(data_get($resource->data, 'booking_id'));
-            if ($booking) {
-                $notifications->refundStatus($booking, $resource->status, (float) $resource->amount);
-            }
-        }
 
         return JsonResource::make($resource->refresh());
     }

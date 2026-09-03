@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\Bus;
+use App\Models\Employee;
 use App\Models\Payment;
+use App\Models\PlatformResource;
 use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -23,6 +25,8 @@ class AdminOperationsController extends Controller
             'trips' => 'platform.manage',
             'bookings' => 'platform.manage',
             'payments' => 'finance.manage',
+            'agents' => 'security.manage',
+            'drivers' => 'security.manage',
         ];
         abort_unless(isset($permissions[$resource]), 404);
         abort_unless($request->user()->can($permissions[$resource]) || $request->user()->can('platform.manage'), 403);
@@ -51,6 +55,8 @@ class AdminOperationsController extends Controller
             'bookings' => Booking::query()->with(['trip:id,departs_at', 'company:id,name'])
                 ->select(['id', 'company_id', 'trip_id', 'reference', 'contact_name', 'contact_email', 'contact_phone', 'total', 'currency', 'status', 'created_at']),
             'payments' => Payment::query()->with('booking:id,company_id,reference')->select(['id', 'booking_id', 'provider', 'provider_reference', 'amount', 'currency', 'status', 'paid_at', 'created_at']),
+            'agents' => (new PlatformResource)->useModule('agents')->newQuery()->select(['id', 'company_id', 'user_id', 'code', 'name', 'status', 'amount as transaction_limit', 'created_at']),
+            'drivers' => Employee::query()->where('staff_type', 'driver')->select(['id', 'company_id', 'employee_number', 'name', 'phone', 'email', 'status', 'availability_status', 'created_at']),
         };
     }
 
@@ -68,6 +74,8 @@ class AdminOperationsController extends Controller
             'trips' => ['currency'],
             'bookings' => ['reference', 'contact_name', 'contact_email', 'contact_phone'],
             'payments' => ['provider', 'provider_reference'],
+            'agents' => ['name', 'code'],
+            'drivers' => ['name', 'employee_number', 'phone', 'email'],
         };
         $query->where(function (Builder $builder) use ($columns, $search): void {
             foreach ($columns as $column) {
