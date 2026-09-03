@@ -1,0 +1,162 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+}
+
+@keyframes auth-hero-reveal {
+  from {
+    background-position: 82% 35%;
+    filter: brightness(0.45);
+  }
+  to {
+    background-position: 50% 35%;
+    filter: brightness(1);
+  }
+}
+
+@keyframes auth-copy-rise {
+  from {
+    opacity: 0;
+    transform: translateY(2rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes auth-form-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes page-section-enter {
+  from {
+    opacity: 0;
+    transform: translateY(1.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes site-page-enter {
+  from { opacity: 0; transform: translateY(0.75rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes public-header-enter {
+  from { opacity: 0; transform: translateY(-100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes public-coach-reveal {
+  from { opacity: 0; transform: translate3d(16%, 2%, 0) scale(1.08); filter: brightness(0.35); }
+  to { opacity: 0.42; transform: translate3d(0, 0, 0) scale(1); filter: brightness(0.72); }
+}
+
+@keyframes public-hero-copy-enter {
+  from { opacity: 0; transform: translateY(2rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.site-page-transition { animation: site-page-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.public-site-header { animation: public-header-enter 500ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.public-journey-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #092f2b 18%, rgb(9 47 43 / 72%) 55%, rgb(9 47 43 / 35%)), url('/images/mufambi-night-coach.png') right 34% / cover no-repeat;
+  animation: public-coach-reveal 1.6s 120ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.public-hero-content { animation: public-hero-copy-enter 700ms 580ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.public-content-hero { position: relative; overflow: hidden; }
+.public-content-hero::after { content: ""; position: absolute; right: -8rem; bottom: -11rem; width: 28rem; height: 28rem; border: 5rem solid rgb(255 255 255 / 4%); border-radius: 9999px; }
+
+main:not([aria-label="Mufambi account"]):not(.public-page) > * {
+  animation: page-section-enter 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+main:not([aria-label="Mufambi account"]):not(.public-page) > :nth-child(2) {
+  animation-delay: 100ms;
+}
+
+main:not([aria-label="Mufambi account"]):not(.public-page) > :nth-child(3) {
+  animation-delay: 200ms;
+}
+
+main:not([aria-label="Mufambi account"]):not(.public-page) > :nth-child(n + 4) {
+  animation-delay: 300ms;
+}
+
+.auth-hero {
+  animation: auth-hero-reveal 4.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.auth-copy {
+  animation: auth-copy-rise 700ms 4.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.auth-actions {
+  animation: auth-copy-rise 600ms 4.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.auth-form-enter {
+  animation: auth-form-enter 220ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-hero,
+  .auth-copy,
+  .auth-actions,
+  .auth-form-enter {
+    animation: none;
+    transition: none;
+  }
+
+  main:not([aria-label="Mufambi account"]):not(.public-page) > * {
+    animation: none;
+  }
+
+  .site-page-transition,
+  .public-site-header,
+  .public-hero-content,
+  .public-journey-hero::before {
+    animation: none;
+    transform: none;
+  }
+}
+
+@layer components {
+  .input {
+    @apply min-h-12 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium normal-case tracking-normal text-slate-900 outline-none transition focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/10;
+  }
+}
