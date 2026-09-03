@@ -42,12 +42,29 @@ class AdminCompanyController extends Controller
     public function updateCommission(Request $request, Company $company): JsonResponse
     {
         abort_unless($request->user()->can('finance.manage') || $request->user()->can('companies.manage'), 403);
-        $validated = $request->validate(['commission_rate' => ['required', 'numeric', 'between:0,100'], 'agent_commission_rate' => ['nullable', 'numeric', 'between:0,100']]);
+        $validated = $request->validate([
+            'commission_rate' => ['required_without:parcel_commission_tiers', 'nullable', 'numeric', 'between:0,100'],
+            'agent_commission_rate' => ['nullable', 'numeric', 'between:0,100'],
+            // Tiers apply to parcel revenue (see FinanceService::parcelCommissionRate). A parcel's
+            // charge falls in whichever tier has min_amount <= charge < max_amount (max_amount null
+            // = unbounded); ties are broken by sorting on min_amount, so overlapping tiers are the
+            // caller's mistake to avoid, not something this validates away. Falls back to
+            // commission_rate above when no tiers are configured or none match.
+            'parcel_commission_tiers' => ['nullable', 'array'],
+            'parcel_commission_tiers.*.min_amount' => ['required', 'numeric', 'min:0'],
+            'parcel_commission_tiers.*.max_amount' => ['nullable', 'numeric', 'gt:parcel_commission_tiers.*.min_amount'],
+            'parcel_commission_tiers.*.rate_percent' => ['required', 'numeric', 'between:0,100'],
+        ]);
         $previous = $company->settings ?? [];
-        $company->update(['settings' => [...$previous, 'commission_rate' => $validated['commission_rate'], ...(isset($validated['agent_commission_rate']) ? ['agent_commission_rate' => $validated['agent_commission_rate']] : [])]]);
+        $company->update(['settings' => [
+            ...$previous,
+            ...(isset($validated['commission_rate']) ? ['commission_rate' => $validated['commission_rate']] : []),
+            ...(isset($validated['agent_commission_rate']) ? ['agent_commission_rate' => $validated['agent_commission_rate']] : []),
+            ...(isset($validated['parcel_commission_tiers']) ? ['parcel_commission_tiers' => $validated['parcel_commission_tiers']] : []),
+        ]]);
         (new PlatformResource)->useModule('audit_logs')->fill([
             'company_id' => $company->id, 'user_id' => $request->user()->id, 'code' => 'company.commission.changed.'.Str::uuid(), 'name' => 'Company commission rate changed', 'status' => 'recorded',
-            'data' => ['record_type' => Company::class, 'record_id' => $company->id, 'previous' => ['commission_rate' => $previous['commission_rate'] ?? null], 'new' => ['commission_rate' => $validated['commission_rate']], 'ip_address' => $request->ip()],
+            'data' => ['record_type' => Company::class, 'record_id' => $company->id, 'previous' => ['commission_rate' => $previous['commission_rate'] ?? null, 'parcel_commission_tiers' => $previous['parcel_commission_tiers'] ?? null], 'new' => $validated, 'ip_address' => $request->ip()],
         ])->save();
 
         return response()->json($company->refresh());

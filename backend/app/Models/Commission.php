@@ -21,4 +21,9 @@ class Commission extends Model
     {
         return $this->belongsTo(Booking::class);
     }
+
+    public function parcel(): BelongsTo
+    {
+        return $this->belongsTo(Parcel::class);
+    }
 }

@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\Commission;
 use App\Models\Parcel;
 use App\Models\TransportRoute;
 use App\Models\Trip;
+use App\Services\FinanceService;
 use Endroid\QrCode\QrCode;
 use Endroid\QrCode\Writer\SvgWriter;
 use Illuminate\Http\JsonResponse;
@@ -52,14 +54,17 @@ class ParcelController extends Controller
         return response()->json($parcel->refresh());
     }
 
-    public function markPaid(Request $request, Parcel $parcel): JsonResponse
+    public function markPaid(Request $request, Parcel $parcel, FinanceService $finance): JsonResponse
     {
         $this->authorizeParcel($request, $parcel);
         $validated = $request->validate(['payment_reference' => ['required', 'string', 'max:191'], 'amount' => ['required', 'numeric', 'min:0']]);
         abort_unless((float) $validated['amount'] === (float) $parcel->amount, 422, 'Payment amount does not match the parcel charge.');
         abort_unless($parcel->payment_status === 'pending', 409, 'Parcel payment was already recorded.');
-        $parcel->update(['payment_status' => 'paid', 'data' => [...($parcel->data ?? []), 'payment_reference' => $validated['payment_reference'], 'paid_at' => now()->toIso8601String()]]);
-        $this->event($parcel, 'payment_confirmed', $request, 'Parcel payment confirmed.');
+        DB::transaction(function () use ($parcel, $validated, $request, $finance): void {
+            $parcel->update(['payment_status' => 'paid', 'data' => [...($parcel->data ?? []), 'payment_reference' => $validated['payment_reference'], 'paid_at' => now()->toIso8601String()]]);
+            $finance->allocateConfirmedParcel($parcel->refresh());
+            $this->event($parcel, 'payment_confirmed', $request, 'Parcel payment confirmed.');
+        });
 
         return response()->json($parcel->refresh());
     }
@@ -113,7 +118,9 @@ class ParcelController extends Controller
         $companyId = $this->companyId($request);
         $base = Parcel::query()->where('company_id', $companyId);
 
-        return response()->json(['total_parcels' => (clone $base)->count(), 'collected' => (clone $base)->where('status', 'collected')->count(), 'active' => (clone $base)->whereNotIn('status', ['collected', 'lost_claim', 'damaged_claim'])->count(), 'claims' => (clone $base)->whereIn('status', ['lost_claim', 'damaged_claim'])->count(), 'revenue' => (float) (clone $base)->where('payment_status', 'paid')->sum('amount')]);
+        $commissions = Commission::where('company_id', $companyId)->whereNotNull('parcel_id');
+
+        return response()->json(['total_parcels' => (clone $base)->count(), 'collected' => (clone $base)->where('status', 'collected')->count(), 'active' => (clone $base)->whereNotIn('status', ['collected', 'lost_claim', 'damaged_claim'])->count(), 'claims' => (clone $base)->whereIn('status', ['lost_claim', 'damaged_claim'])->count(), 'revenue' => (float) (clone $base)->where('payment_status', 'paid')->sum('amount'), 'platform_commission' => round((float) (clone $commissions)->sum('platform_amount'), 2), 'operator_earnings' => round((float) (clone $commissions)->sum('operator_amount'), 2)]);
     }
 
     /** @return array<string, mixed> */

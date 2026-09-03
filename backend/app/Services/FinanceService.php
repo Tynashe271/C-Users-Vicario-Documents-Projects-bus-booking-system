@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\Booking;
 use App\Models\Commission;
+use App\Models\Company;
+use App\Models\Parcel;
 use App\Models\Payment;
 use App\Models\Wallet;
 use App\Models\WalletTransaction;
@@ -27,11 +29,58 @@ class FinanceService
             $commission = Commission::create(['company_id' => $booking->company_id, 'booking_id' => $booking->id, 'code' => 'COM-'.$booking->reference, 'name' => 'Booking revenue allocation', 'status' => 'available', 'amount' => $platform, 'currency' => $booking->currency, 'gross_amount' => $gross, 'platform_amount' => $platform, 'agent_amount' => $agent, 'operator_amount' => $operator, 'tax_amount' => (float) $booking->taxes, 'available_at' => now()]);
             $operatorWallet = $this->wallet($booking->company_id, 'operator', $booking->currency);
             $platformWallet = $this->wallet(null, 'platform', $booking->currency);
-            $this->credit($operatorWallet, $operator, 'booking_revenue', 'booking:'.$booking->id.':operator', $booking, $payment, true);
-            $this->credit($platformWallet, $platform, 'platform_commission', 'booking:'.$booking->id.':platform', $booking, $payment);
+            $this->credit($operatorWallet, $operator, 'booking_revenue', 'booking:'.$booking->id.':operator', true, $booking, $payment);
+            $this->credit($platformWallet, $platform, 'platform_commission', 'booking:'.$booking->id.':platform', false, $booking, $payment);
 
             return $commission;
         });
+    }
+
+    /**
+     * Parcel revenue previously generated no commission or wallet entry at all. This gives it the
+     * same treatment as a confirmed booking: a Commission row (so it flows into the existing
+     * settlement pipeline) plus operator/platform wallet credits, split using the operator's
+     * parcel commission tiers (falling back to their flat ticket commission_rate if none are set).
+     */
+    public function allocateConfirmedParcel(Parcel $parcel): Commission
+    {
+        return DB::transaction(function () use ($parcel): Commission {
+            $existing = Commission::where('parcel_id', $parcel->id)->lockForUpdate()->first();
+            if ($existing) {
+                return $existing;
+            }
+            $parcel->loadMissing('route.company');
+            $company = $parcel->route?->company;
+            $gross = (float) $parcel->amount;
+            $rate = $this->parcelCommissionRate($company, $gross);
+            $platform = round($gross * $rate / 100, 2);
+            $operator = round($gross - $platform, 2);
+            $commission = Commission::create(['company_id' => $parcel->company_id, 'parcel_id' => $parcel->id, 'code' => 'PCOM-'.$parcel->tracking_number, 'name' => 'Parcel revenue allocation', 'status' => 'available', 'amount' => $platform, 'currency' => $parcel->currency, 'gross_amount' => $gross, 'platform_amount' => $platform, 'agent_amount' => 0, 'operator_amount' => $operator, 'tax_amount' => 0, 'available_at' => now(), 'data' => ['commission_rate_percent' => $rate]]);
+            $operatorWallet = $this->wallet($parcel->company_id, 'operator', $parcel->currency);
+            $platformWallet = $this->wallet(null, 'platform', $parcel->currency);
+            $this->credit($operatorWallet, $operator, 'parcel_revenue', 'parcel:'.$parcel->id.':operator', true, parcelId: $parcel->id);
+            $this->credit($platformWallet, $platform, 'platform_commission', 'parcel:'.$parcel->id.':platform', false, parcelId: $parcel->id);
+
+            return $commission;
+        });
+    }
+
+    /**
+     * The rate for the tier the parcel's charge falls into — tiers are `[min_amount, max_amount
+     * (null = unbounded), rate_percent]`, configured per operator via
+     * AdminCompanyController::updateCommission. No tiers configured (or none matching) falls back
+     * to the operator's flat ticket commission rate, so parcel revenue is never commission-free.
+     */
+    public function parcelCommissionRate(?Company $company, float $amount): float
+    {
+        $tiers = collect(data_get($company?->settings, 'parcel_commission_tiers', []))->sortBy('min_amount')->values();
+        $tier = $tiers->first(function (array $tier) use ($amount): bool {
+            $max = $tier['max_amount'] ?? null;
+
+            return $amount >= (float) ($tier['min_amount'] ?? 0) && ($max === null || $amount < (float) $max);
+        });
+
+        return (float) ($tier['rate_percent'] ?? data_get($company?->settings, 'commission_rate', 0));
     }
 
     public function wallet(?int $companyId, string $type, string $currency): Wallet
@@ -74,7 +123,7 @@ class FinanceService
         });
     }
 
-    private function credit(Wallet $wallet, float $amount, string $type, string $idempotencyKey, Booking $booking, Payment $payment, bool $hold = false): void
+    private function credit(Wallet $wallet, float $amount, string $type, string $idempotencyKey, bool $hold = false, ?Booking $booking = null, ?Payment $payment = null, ?int $parcelId = null): void
     {
         if ($amount <= 0 || WalletTransaction::where('idempotency_key', $idempotencyKey)->exists()) {
             return;
@@ -82,6 +131,6 @@ class FinanceService
         $wallet = Wallet::whereKey($wallet->id)->lockForUpdate()->firstOrFail();
         $balance = round((float) $wallet->balance + $amount, 2);
         $wallet->update(['balance' => $balance, 'available_balance' => $hold ? $wallet->available_balance : round((float) $wallet->available_balance + $amount, 2), 'held_balance' => $hold ? round((float) $wallet->held_balance + $amount, 2) : $wallet->held_balance, 'last_transaction_at' => now()]);
-        WalletTransaction::create(['company_id' => $wallet->company_id, 'wallet_id' => $wallet->id, 'booking_id' => $booking->id, 'payment_id' => $payment->id, 'code' => $idempotencyKey, 'name' => str($type)->headline(), 'status' => 'posted', 'amount' => $amount, 'currency' => $wallet->currency, 'transaction_type' => $type, 'direction' => 'credit', 'balance_after' => $balance, 'idempotency_key' => $idempotencyKey, 'occurred_at' => now()]);
+        WalletTransaction::create(['company_id' => $wallet->company_id, 'wallet_id' => $wallet->id, 'booking_id' => $booking?->id, 'payment_id' => $payment?->id, 'parcel_id' => $parcelId, 'code' => $idempotencyKey, 'name' => str($type)->headline(), 'status' => 'posted', 'amount' => $amount, 'currency' => $wallet->currency, 'transaction_type' => $type, 'direction' => 'credit', 'balance_after' => $balance, 'idempotency_key' => $idempotencyKey, 'occurred_at' => now()]);
     }
 }
