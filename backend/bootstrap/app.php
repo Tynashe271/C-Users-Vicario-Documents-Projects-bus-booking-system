@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\AuthenticateApiKey;
 use App\Http\Middleware\EnsureActiveCompany;
 use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
@@ -18,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'company.active' => EnsureActiveCompany::class,
+            'apikey' => AuthenticateApiKey::class,
         ]);
         $middleware->append(SecurityHeaders::class);
     })

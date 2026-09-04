@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\AdminCompanyController;
 use App\Http\Controllers\Api\V1\AdminDashboardController;
 use App\Http\Controllers\Api\V1\AdminOperationsController;
 use App\Http\Controllers\Api\V1\AgentController;
+use App\Http\Controllers\Api\V1\ApiClientController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BoardingController;
 use App\Http\Controllers\Api\V1\BookingCancellationController;
@@ -86,12 +87,27 @@ Route::prefix('v1')->group(function (): void {
     Route::get('/policies/{slug}', [PublicContentController::class, 'policy']);
     Route::get('/faq', [PublicContentController::class, 'faq']);
 
+    // Third-party/server-to-server integrations authenticate with `X-Api-Key: <client_id>.<secret>`
+    // (see AuthenticateApiKey) instead of a Sanctum login token. Each route declares the scope it
+    // needs; the resolved key's service-account user then goes through the exact same
+    // authorization the same controller action already enforces for a real staff login.
+    // apikey must run before company.active — company.active reads $request->user(), which apikey
+    // is what resolves; company.active as a wrapping group middleware would run first and see no
+    // user yet, silently skipping the suspended-company check instead of enforcing it.
+    Route::get('/partner/bookings/{booking}', [BookingController::class, 'show'])->middleware(['apikey:bookings.read', 'company.active']);
+    Route::get('/partner/parcels/report', [ParcelController::class, 'report'])->middleware(['apikey:parcels.read', 'company.active']);
+
     Route::middleware(['auth:sanctum', 'company.active'])->group(function (): void {
         Route::get('/auth/me', [AuthController::class, 'me']);
         Route::get('/admin/dashboard', AdminDashboardController::class);
         Route::get('/admin/operations/{resource}', AdminOperationsController::class);
         Route::post('/admin/platform-staff', [PlatformStaffController::class, 'store']);
         Route::patch('/admin/users/{user}/status', [PlatformStaffController::class, 'updateStatus']);
+        Route::get('/admin/api-clients', [ApiClientController::class, 'index']);
+        Route::post('/admin/api-clients', [ApiClientController::class, 'store']);
+        Route::get('/admin/api-clients/{apiClient}', [ApiClientController::class, 'show']);
+        Route::post('/admin/api-clients/{apiClient}/rotation', [ApiClientController::class, 'rotate']);
+        Route::post('/admin/api-clients/{apiClient}/revocation', [ApiClientController::class, 'revoke']);
         Route::patch('/admin/global-users/{user}/status', [GlobalUserManagementController::class, 'updateStatus']);
         Route::post('/admin/global-users/{user}/session-revocation', [GlobalUserManagementController::class, 'revokeSessions']);
         Route::get('/admin/global-users/{user}/audit-history', [GlobalUserManagementController::class, 'auditHistory']);
