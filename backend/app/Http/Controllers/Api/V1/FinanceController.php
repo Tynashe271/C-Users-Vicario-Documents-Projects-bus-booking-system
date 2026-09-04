@@ -11,6 +11,7 @@ use App\Models\Settlement;
 use App\Models\Wallet;
 use App\Services\AccountingExportService;
 use App\Services\FinanceService;
+use App\Services\WebhookDispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -72,6 +73,7 @@ class FinanceController extends Controller
             $settlement->update(['status' => 'paid', 'paid_by' => $request->user()->id, 'paid_at' => now(), 'payment_reference' => $validated['payment_reference']]);
         });
         $this->auditSettlement($request, $settlement, 'paid', ['net_amount' => (float) $settlement->net_amount, 'payment_reference' => $validated['payment_reference']]);
+        app(WebhookDispatcher::class)->dispatch('settlement.paid', ['settlement_id' => $settlement->id, 'code' => $settlement->code, 'net_amount' => (float) $settlement->net_amount, 'currency' => $settlement->currency, 'payment_reference' => $validated['payment_reference']], $settlement->company_id);
 
         return response()->json($settlement->refresh()->load('items'));
     }

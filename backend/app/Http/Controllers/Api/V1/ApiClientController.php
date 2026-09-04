@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\ApiClient;
 use App\Models\Company;
+use App\Models\PlatformResource;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -98,6 +99,21 @@ class ApiClientController extends Controller
         $apiClient->user?->forceFill(['status' => 'suspended'])->save();
 
         return response()->json($apiClient->refresh());
+    }
+
+    /** Daily request counts for this key over a date range — see AuthenticateApiKey::recordUsage(). */
+    public function usage(Request $request, ApiClient $apiClient): JsonResponse
+    {
+        $this->authorizeClient($request, $apiClient);
+        $validated = $request->validate(['from' => ['nullable', 'date'], 'to' => ['nullable', 'date', 'after_or_equal:from']]);
+        $from = $validated['from'] ?? now()->subDays(29)->toDateString();
+        $to = $validated['to'] ?? now()->toDateString();
+        $daily = (new PlatformResource)->useModule('api_usage_records')->newQuery()
+            ->whereBetween('code', ["{$apiClient->client_id}:{$from}", "{$apiClient->client_id}:{$to}"])
+            ->orderBy('code')->get(['code', 'amount'])
+            ->mapWithKeys(fn (PlatformResource $record) => [Str::after($record->code, ':') => (int) $record->amount]);
+
+        return response()->json(['client_id' => $apiClient->client_id, 'from' => $from, 'to' => $to, 'total_requests' => $daily->sum(), 'daily' => $daily]);
     }
 
     /** True platform security clearance: can see/manage any company's keys, or issue a company_id-less one. */

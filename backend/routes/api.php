@@ -56,6 +56,7 @@ use App\Http\Controllers\Api\V1\TrackingController;
 use App\Http\Controllers\Api\V1\TripManagementController;
 use App\Http\Controllers\Api\V1\TwoFactorController;
 use App\Http\Controllers\Api\V1\WalletController;
+use App\Http\Controllers\Api\V1\WebhookSubscriptionController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
@@ -108,6 +109,13 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/admin/api-clients/{apiClient}', [ApiClientController::class, 'show']);
         Route::post('/admin/api-clients/{apiClient}/rotation', [ApiClientController::class, 'rotate']);
         Route::post('/admin/api-clients/{apiClient}/revocation', [ApiClientController::class, 'revoke']);
+        Route::get('/admin/api-clients/{apiClient}/usage', [ApiClientController::class, 'usage']);
+        Route::get('/admin/webhooks', [WebhookSubscriptionController::class, 'index']);
+        Route::post('/admin/webhooks', [WebhookSubscriptionController::class, 'store']);
+        Route::get('/admin/webhooks/{webhook}', [WebhookSubscriptionController::class, 'show']);
+        Route::patch('/admin/webhooks/{webhook}', [WebhookSubscriptionController::class, 'update']);
+        Route::post('/admin/webhooks/{webhook}/rotation', [WebhookSubscriptionController::class, 'rotate']);
+        Route::delete('/admin/webhooks/{webhook}', [WebhookSubscriptionController::class, 'destroy']);
         Route::patch('/admin/global-users/{user}/status', [GlobalUserManagementController::class, 'updateStatus']);
         Route::post('/admin/global-users/{user}/session-revocation', [GlobalUserManagementController::class, 'revokeSessions']);
         Route::get('/admin/global-users/{user}/audit-history', [GlobalUserManagementController::class, 'auditHistory']);

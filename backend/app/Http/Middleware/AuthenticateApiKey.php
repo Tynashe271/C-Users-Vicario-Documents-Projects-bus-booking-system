@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\ApiClient;
+use App\Models\PlatformResource;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -43,9 +44,24 @@ class AuthenticateApiKey
         abort_unless($user && $user->status === 'active', 401, 'This API key is not linked to an active account.');
 
         $client->update(['last_used_at' => now()]);
+        $this->recordUsage($client);
         Auth::setUser($user);
         $request->setUserResolver(fn () => $user);
 
         return $next($request);
+    }
+
+    /** One row per (key, calendar day), incremented per request — see ApiClientController::usage(). */
+    private function recordUsage(ApiClient $client): void
+    {
+        $code = $client->client_id.':'.now()->toDateString();
+        $module = (new PlatformResource)->useModule('api_usage_records');
+        $record = $module->newQuery()->where('code', $code)->first();
+        if ($record) {
+            $record->increment('amount');
+
+            return;
+        }
+        $module->fill(['company_id' => $client->company_id, 'user_id' => $client->user_id, 'code' => $code, 'name' => 'API usage: '.$client->client_id, 'status' => 'recorded', 'amount' => 1])->save();
     }
 }

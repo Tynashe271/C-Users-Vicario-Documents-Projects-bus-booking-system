@@ -22,7 +22,7 @@ $modules = [
     'receipts', 'payment_methods', 'operator_policies', 'pre_trip_checklists',
     'manual_boarding_verifications', 'trip_status_updates', 'incident_attachments', 'agent_statements',
     'review_moderations', 'financial_ledger_entries', 'collection_proofs', 'response_templates',
-    'integration_logs',
+    'integration_logs', 'webhook_subscriptions', 'webhook_deliveries', 'api_usage_records',
 ];
 
 return [

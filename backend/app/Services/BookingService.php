@@ -172,5 +172,6 @@ class BookingService
         $financeService->allocateConfirmedBooking($booking->fresh(['trip.company']), $payment);
         $notifications->paymentConfirmed($booking->fresh());
         $occupancy->sync($booking->trip()->firstOrFail());
+        app(WebhookDispatcher::class)->dispatch('booking.confirmed', ['booking_id' => $booking->id, 'reference' => $booking->reference, 'total' => (float) $booking->total, 'currency' => $booking->currency], $booking->company_id);
     }
 }
