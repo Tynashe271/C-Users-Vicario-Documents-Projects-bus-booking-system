@@ -96,7 +96,7 @@ class TripController extends Controller
     }
 
     /** @param Collection<int, Trip> $trips */
-    private function decorateTrips(Collection $trips): Collection
+    public function decorateTrips(Collection $trips): Collection
     {
         $tripIds = $trips->pluck('id');
         $unavailable = BookingPassenger::query()->whereIn('trip_id', $tripIds)->where(function (Builder $query): void {

@@ -23,6 +23,18 @@ class GlobalReportsController extends Controller
         $this->authorizePlatform($request);
         [$from, $to] = $this->period($request);
 
+        return response()->json($this->build($from, $to));
+    }
+
+    /**
+     * The report's data, independent of the HTTP request — so PlatformReportResolver (GraphQL) can
+     * build the exact same report as this REST endpoint after doing its own auth check, rather than
+     * a second, divergent implementation.
+     *
+     * @return array<string, mixed>
+     */
+    public function build(Carbon $from, Carbon $to): array
+    {
         $bookings = Booking::whereBetween('created_at', [$from, $to]);
         $confirmed = (clone $bookings)->whereIn('status', ['confirmed', 'completed']);
         $totalBookings = (clone $bookings)->count();
@@ -32,7 +44,7 @@ class GlobalReportsController extends Controller
 
         $refundedAmount = round((float) (new PlatformResource)->useModule('refunds')->newQuery()->where('status', 'approved')->whereBetween('created_at', [$from, $to])->sum('amount'), 2);
 
-        return response()->json([
+        return [
             'period' => ['from' => $from->toDateString(), 'to' => $to->toDateString()],
             'total_bookings' => $totalBookings,
             'gross_booking_value' => $grossBookingValue,
@@ -54,7 +66,7 @@ class GlobalReportsController extends Controller
             'parcel_performance' => $this->parcelPerformance($from, $to),
             'settlements' => ['paid' => round((float) Settlement::whereBetween('created_at', [$from, $to])->where('status', 'paid')->sum('net_amount'), 2), 'pending' => round((float) Settlement::whereBetween('created_at', [$from, $to])->whereIn('status', ['draft', 'approved'])->sum('net_amount'), 2)],
             'tax_collected' => round((float) (clone $confirmed)->sum('taxes'), 2),
-        ]);
+        ];
     }
 
     public function exportRevenueByCompany(Request $request): JsonResponse

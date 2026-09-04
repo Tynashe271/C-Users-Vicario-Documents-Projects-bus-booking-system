@@ -23,14 +23,27 @@ class CompanyDashboardController extends Controller
     public function __invoke(Request $request): JsonResponse
     {
         abort_unless($request->user()->company_id && $request->user()->can('reports.view'), 403);
-        $companyId = $request->user()->company_id;
+
+        return response()->json($this->build($request->user()));
+    }
+
+    /**
+     * The dashboard's data, independent of the HTTP request — so CompanyDashboardResolver
+     * (GraphQL) can build the exact same summary as this REST endpoint after doing its own auth
+     * check, rather than a second, divergent implementation.
+     *
+     * @return array<string, mixed>
+     */
+    public function build(User $companyUser): array
+    {
+        $companyId = $companyUser->company_id;
         $todayBookings = Booking::where('company_id', $companyId)->whereDate('created_at', today());
         $confirmedSeats = BookingPassenger::whereHas('booking', fn ($query) => $query->where('company_id', $companyId))->where('status', 'confirmed')->count();
         $seatCapacity = Bus::where('company_id', $companyId)->sum('seat_capacity');
         $auditQuery = (new PlatformResource)->useModule('audit_logs')->newQuery()->where('company_id', $companyId);
 
-        return response()->json([
-            'branches' => $request->user()->company->branches()->count(),
+        return [
+            'branches' => $companyUser->company->branches()->count(),
             'staff' => User::where('company_id', $companyId)->count(),
             'buses' => [
                 'total' => Bus::where('company_id', $companyId)->count(),
@@ -51,6 +64,6 @@ class CompanyDashboardController extends Controller
                 'completed_bookings' => Booking::where('company_id', $companyId)->where('status', 'completed')->count(),
             ],
             'recent_activities' => $auditQuery->latest('created_at')->latest('id')->limit(10)->get(),
-        ]);
+        ];
     }
 }

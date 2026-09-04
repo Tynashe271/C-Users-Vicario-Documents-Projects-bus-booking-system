@@ -1,26 +1,54 @@
 "A datetime string with format `Y-m-d H:i:s`, e.g. `2018-05-23 13:43:32`."
 scalar DateTime @scalar(class: "Nuwave\\Lighthouse\\Schema\\Types\\Scalars\\DateTime")
 
-"Indicates what fields are available at the top level of a query operation."
+"""
+Indicates what fields are available at the top level of a query operation.
+
+None of these routes are wrapped in `auth:sanctum` middleware (see config/lighthouse.php) — each
+resolver authenticates and authorizes itself, the same way REST controllers do, using
+`auth('sanctum')->user()`. A field that needs no login (trip search/details) simply skips that
+check, matching its public REST equivalent.
+"""
 type Query {
     "Read any enabled transport-platform module with tenant isolation."
     moduleRecords(module: String!, status: String): [PlatformResource!]!
         @field(resolver: "App\\GraphQL\\PlatformModuleResolver")
 
-    tripSearch(origin_terminal_id: ID!, destination_terminal_id: ID!, date: String!): [Trip!]!
-        @field(resolver: "App\\GraphQL\\TripSearchResolver")
+    "Advanced trip search with flexible filtering, decorated with live seat availability and pricing context — the same decoration REST's /trips search applies, so results match exactly."
+    tripSearch(
+        origin_terminal_id: ID!
+        destination_terminal_id: ID!
+        date: String!
+        company_id: ID
+        bus_class: String
+        min_price: Float
+        max_price: Float
+        minimum_seats: Int
+        sort: String
+    ): [Trip!]! @field(resolver: "App\\GraphQL\\TripSearchResolver")
+
+    "One trip with its full graph — route, stops, bus, seats, company — in a single round trip, instead of the several REST calls a client would otherwise need to assemble the same screen."
+    tripDetails(id: ID!): Trip @field(resolver: "App\\GraphQL\\TripDetailsResolver")
+
+    "The signed-in passenger's own booking history, each with its trip, passengers, seats, tickets, and payments nested — one query for a booking-history screen."
+    myBookings(status: String): [Booking!]! @field(resolver: "App\\GraphQL\\MyBookingsResolver")
+
+    "Everything a passenger app's home screen needs in one round trip: upcoming trips, loyalty status, wallet balance, unread notifications."
+    passengerDashboard: PassengerDashboard! @field(resolver: "App\\GraphQL\\PassengerDashboardResolver")
+
+    "The signed-in company staff member's operations dashboard — identical data to GET /company/dashboard. JSON-encoded (see JsonPayload) since its shape is a flat bag of counters, not a traversable graph."
+    companyDashboard: JsonPayload! @field(resolver: "App\\GraphQL\\CompanyDashboardResolver")
+
+    "The Super Admin platform-wide dashboard — identical data to GET /admin/dashboard."
+    platformDashboard: JsonPayload! @field(resolver: "App\\GraphQL\\PlatformDashboardResolver")
+
+    "The Super Admin analytical report — identical data to GET /reports/platform."
+    platformReport(from: String, to: String): JsonPayload! @field(resolver: "App\\GraphQL\\PlatformReportResolver")
 }
 
-type Trip {
-    id: ID!
-    company_id: ID!
-    route_id: ID!
-    bus_id: ID!
-    departs_at: DateTime!
-    arrives_at: DateTime!
-    base_fare: Float!
-    currency: String!
-    status: String!
+"A JSON-encoded object, for payloads whose shape is a flat bag of fields rather than a graph worth modelling as its own type. Decode client-side; mirrors the equivalent REST endpoint's response body exactly."
+type JsonPayload {
+    json: String!
 }
 
 type PlatformResource {
@@ -37,6 +65,126 @@ type PlatformResource {
     ends_at: DateTime
     created_at: DateTime!
     updated_at: DateTime!
+}
+
+type Company {
+    id: ID!
+    name: String!
+    slug: String!
+    currency: String
+    status: String!
+}
+
+type Terminal {
+    id: ID!
+    name: String!
+    city: String!
+    country: String!
+    latitude: Float
+    longitude: Float
+}
+
+type Route {
+    id: ID!
+    name: String!
+    distance_km: Int
+    duration_minutes: Int!
+    active: Boolean!
+    origin: Terminal @belongsTo
+    destination: Terminal @belongsTo
+}
+
+type Seat {
+    id: ID!
+    number: String!
+    type: String!
+    accessible: Boolean!
+    deck: String
+    "Only present on a Trip's decorated seats (via tripSearch/tripDetails), not a bare Bus.seats lookup."
+    position: String
+    "Only present on a Trip's decorated seats: \"available\" or \"occupied\" for the trip being searched/viewed."
+    availability: String
+}
+
+type Bus {
+    id: ID!
+    registration_number: String!
+    model: String!
+    class: String!
+    seat_capacity: Int!
+    amenities: [String!]
+    seats: [Seat!]! @hasMany
+}
+
+type Trip {
+    id: ID!
+    departs_at: DateTime!
+    arrives_at: DateTime!
+    base_fare: Float!
+    currency: String!
+    status: String!
+    company: Company @belongsTo
+    route: Route @belongsTo
+    bus: Bus @belongsTo
+    "Present once decorated by tripSearch/tripDetails; null on a bare module/relation lookup."
+    available_seats: Int
+    duration_minutes: Int
+    operator_rating: Float
+}
+
+type BookingPassenger {
+    id: ID!
+    full_name: String!
+    type: String!
+    fare: Float!
+    status: String!
+    seat: Seat @belongsTo
+    ticket: Ticket @hasOne
+}
+
+"Never exposes qr_token — that stays a REST-only, boarding-scan concern (see BoardingController)."
+type Ticket {
+    id: ID!
+    ticket_number: String!
+    status: String!
+}
+
+type Payment {
+    id: ID!
+    provider: String!
+    amount: Float!
+    currency: String!
+    status: String!
+    paid_at: DateTime
+}
+
+type Booking {
+    id: ID!
+    reference: String!
+    contact_name: String!
+    contact_email: String
+    contact_phone: String!
+    subtotal: Float!
+    discount: Float!
+    taxes: Float!
+    fees: Float!
+    total: Float!
+    currency: String!
+    status: String!
+    booking_type: String
+    source: String
+    created_at: DateTime!
+    trip: Trip @belongsTo
+    passengers: [BookingPassenger!]! @hasMany
+    payments: [Payment!]! @hasMany
+}
+
+type PassengerDashboard {
+    upcoming_bookings: [Booking!]!
+    unread_notifications: Int!
+    loyalty_points_balance: Int!
+    loyalty_membership_level: String
+    wallet_balance: Float!
 }
 
 "Account of a person who uses this application."

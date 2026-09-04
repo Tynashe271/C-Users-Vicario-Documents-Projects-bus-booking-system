@@ -24,11 +24,24 @@ class AdminDashboardController extends Controller
     public function __invoke(Request $request): JsonResponse
     {
         abort_unless($request->user()->can('platform.manage'), 403);
+
+        return response()->json($this->build());
+    }
+
+    /**
+     * The dashboard's data, independent of the HTTP request — so PlatformDashboardResolver
+     * (GraphQL) can build the exact same summary as this REST endpoint after doing its own auth
+     * check, rather than a second, divergent implementation.
+     *
+     * @return array<string, mixed>
+     */
+    public function build(): array
+    {
         $companiesByStatus = Company::query()->selectRaw('status, count(*) as aggregate')->groupBy('status')->pluck('aggregate', 'status');
         $tripsByStatus = Trip::query()->selectRaw('status, count(*) as aggregate')->groupBy('status')->pluck('aggregate', 'status');
         $auditQuery = (new PlatformResource)->useModule('audit_logs')->newQuery();
 
-        return response()->json([
+        return [
             'companies' => [
                 'total' => Company::count(),
                 'approved' => (int) ($companiesByStatus['approved'] ?? 0) + (int) ($companiesByStatus['active'] ?? 0),
@@ -50,6 +63,6 @@ class AdminDashboardController extends Controller
             'open_support_cases' => SupportCase::whereNotIn('status', ['resolved', 'closed'])->count(),
             'security_alerts' => (new PlatformResource)->useModule('security_events')->newQuery()->whereIn('status', ['open', 'flagged'])->count(),
             'recent_activities' => $auditQuery->latest('created_at')->latest('id')->limit(10)->get(),
-        ]);
+        ];
     }
 }
