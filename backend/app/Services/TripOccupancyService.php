@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Events\TripSeatsUpdated;
 use App\Models\BookingPassenger;
 use App\Models\Trip;
 
@@ -34,5 +35,6 @@ class TripOccupancyService
         if ($status !== $trip->status) {
             $trip->update(['status' => $status]);
         }
+        broadcast(new TripSeatsUpdated($trip->id, max(0, $capacity - $confirmed), $status));
     }
 }

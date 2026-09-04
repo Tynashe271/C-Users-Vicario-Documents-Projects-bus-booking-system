@@ -13,6 +13,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
 
 class TripController extends Controller
@@ -48,18 +49,7 @@ class TripController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:50'], 'page' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $trips = Trip::query()
-            ->with(['company:id,name,slug,settings', 'route.origin', 'route.destination', 'bus.seats'])
-            ->whereHas('route', fn (Builder $route): Builder => $route->where('origin_terminal_id', $validated['origin_terminal_id'])->where('destination_terminal_id', $validated['destination_terminal_id'])->where('active', true))
-            ->whereDate('departs_at', $validated['date'])->whereIn('status', ['published', 'available', 'almost_full'])
-            ->when($validated['company_id'] ?? null, fn (Builder $query, int $id): Builder => $query->where('company_id', $id))
-            ->when($validated['bus_class'] ?? null, fn (Builder $query, string $class): Builder => $query->whereHas('bus', fn (Builder $bus): Builder => $bus->where('class', $class)))
-            ->when(isset($validated['min_price']), fn (Builder $query): Builder => $query->where('base_fare', '>=', $validated['min_price']))
-            ->when(isset($validated['max_price']), fn (Builder $query): Builder => $query->where('base_fare', '<=', $validated['max_price']))
-            ->when($validated['departure_from'] ?? null, fn (Builder $query, string $time): Builder => $query->whereTime('departs_at', '>=', $time))
-            ->when($validated['departure_to'] ?? null, fn (Builder $query, string $time): Builder => $query->whereTime('departs_at', '<=', $time))
-            ->when($validated['arrival_from'] ?? null, fn (Builder $query, string $time): Builder => $query->whereTime('arrives_at', '>=', $time))
-            ->when($validated['arrival_to'] ?? null, fn (Builder $query, string $time): Builder => $query->whereTime('arrives_at', '<=', $time))->get();
+        $trips = $this->searchTrips($validated);
 
         $trips = $this->decorateTrips($trips)->filter(function (Trip $trip) use ($validated): bool {
             $amenities = collect($trip->bus->amenities ?? []);
@@ -82,6 +72,40 @@ class TripController extends Controller
         $paginator = new LengthAwarePaginator($trips->forPage($page, $perPage)->values(), $trips->count(), $perPage, $page, ['path' => $request->url(), 'query' => $request->query()]);
 
         return response()->json($paginator);
+    }
+
+    /**
+     * The expensive, slowly-changing part of a search — which trips match the route/date/price/
+     * class filters — cached briefly under the filters that actually shape the SQL. Deliberately
+     * NOT cached: decorateTrips()'s seat-lock-derived available_seats, computed fresh below on
+     * every request — caching that would risk showing a seat as free after it's already held,
+     * undermining the seat-lock correctness work in BookingService.
+     *
+     * @param  array<string, mixed>  $validated
+     * @return Collection<int, Trip>
+     */
+    private function searchTrips(array $validated): Collection
+    {
+        $cacheKey = 'trip-search:'.md5(json_encode([
+            'origin' => $validated['origin_terminal_id'], 'destination' => $validated['destination_terminal_id'], 'date' => $validated['date'],
+            'company_id' => $validated['company_id'] ?? null, 'bus_class' => $validated['bus_class'] ?? null,
+            'min_price' => $validated['min_price'] ?? null, 'max_price' => $validated['max_price'] ?? null,
+            'departure_from' => $validated['departure_from'] ?? null, 'departure_to' => $validated['departure_to'] ?? null,
+            'arrival_from' => $validated['arrival_from'] ?? null, 'arrival_to' => $validated['arrival_to'] ?? null,
+        ], JSON_THROW_ON_ERROR));
+
+        return Cache::remember($cacheKey, 30, fn () => Trip::query()
+            ->with(['company:id,name,slug,settings', 'route.origin', 'route.destination', 'bus.seats'])
+            ->whereHas('route', fn (Builder $route): Builder => $route->where('origin_terminal_id', $validated['origin_terminal_id'])->where('destination_terminal_id', $validated['destination_terminal_id'])->where('active', true))
+            ->whereDate('departs_at', $validated['date'])->whereIn('status', ['published', 'available', 'almost_full'])
+            ->when($validated['company_id'] ?? null, fn (Builder $query, int $id): Builder => $query->where('company_id', $id))
+            ->when($validated['bus_class'] ?? null, fn (Builder $query, string $class): Builder => $query->whereHas('bus', fn (Builder $bus): Builder => $bus->where('class', $class)))
+            ->when(isset($validated['min_price']), fn (Builder $query): Builder => $query->where('base_fare', '>=', $validated['min_price']))
+            ->when(isset($validated['max_price']), fn (Builder $query): Builder => $query->where('base_fare', '<=', $validated['max_price']))
+            ->when($validated['departure_from'] ?? null, fn (Builder $query, string $time): Builder => $query->whereTime('departs_at', '>=', $time))
+            ->when($validated['departure_to'] ?? null, fn (Builder $query, string $time): Builder => $query->whereTime('departs_at', '<=', $time))
+            ->when($validated['arrival_from'] ?? null, fn (Builder $query, string $time): Builder => $query->whereTime('arrives_at', '>=', $time))
+            ->when($validated['arrival_to'] ?? null, fn (Builder $query, string $time): Builder => $query->whereTime('arrives_at', '<=', $time))->get());
     }
 
     public function show(Trip $trip): JsonResponse
