@@ -9,6 +9,7 @@ use App\Models\Seat;
 use App\Models\Terminal;
 use App\Models\TransportRoute;
 use App\Models\Trip;
+use App\Services\MappingService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -41,8 +42,28 @@ class CoreManagementController extends Controller
         if (in_array($resource, ['buses', 'routes', 'trips'], true) && ! $this->isPlatformUser($request)) {
             $data['company_id'] = $request->user()->company_id;
         }
+        if ($resource === 'routes' && ! isset($data['distance_km'])) {
+            $data['distance_km'] = $this->estimateRouteDistance($data);
+        }
 
         return JsonResource::make($class::create($data));
+    }
+
+    /**
+     * A caller that doesn't already know the road distance still gets a route it can price and
+     * report on — see MappingService for why this is a real distance and not a guess.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function estimateRouteDistance(array $data): ?int
+    {
+        $origin = Terminal::find($data['origin_terminal_id'] ?? null);
+        $destination = Terminal::find($data['destination_terminal_id'] ?? null);
+        if ($origin?->latitude === null || $origin?->longitude === null || $destination?->latitude === null || $destination?->longitude === null) {
+            return null;
+        }
+
+        return (int) round(app(MappingService::class)->distanceKm((float) $origin->latitude, (float) $origin->longitude, (float) $destination->latitude, (float) $destination->longitude));
     }
 
     /**

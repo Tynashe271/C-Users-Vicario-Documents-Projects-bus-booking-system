@@ -9,6 +9,7 @@ use App\Models\PlatformResource;
 use App\Models\Reconciliation;
 use App\Models\Settlement;
 use App\Models\Wallet;
+use App\Services\AccountingExportService;
 use App\Services\FinanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -73,6 +74,15 @@ class FinanceController extends Controller
         $this->auditSettlement($request, $settlement, 'paid', ['net_amount' => (float) $settlement->net_amount, 'payment_reference' => $validated['payment_reference']]);
 
         return response()->json($settlement->refresh()->load('items'));
+    }
+
+    /** Pushes a paid settlement to a configured external accounting system; see AccountingExportService. */
+    public function exportToAccounting(Request $request, Settlement $settlement, AccountingExportService $accounting): JsonResponse
+    {
+        $this->authorizeSettlement($request, $settlement);
+        abort_unless($settlement->status === 'paid', 409, 'Only a paid settlement can be exported to accounting.');
+
+        return response()->json($accounting->exportSettlement($settlement));
     }
 
     public function reconcile(Request $request): JsonResponse

@@ -47,7 +47,7 @@ class PlatformModuleResolver
             str_contains($module, 'parcel') || $module === 'collection_proofs' => 'parcels.manage',
             str_contains($module, 'support') => 'support.manage',
             str_contains($module, 'report') || str_contains($module, 'analytics') => 'reports.view',
-            str_contains($module, 'wallet') || str_contains($module, 'settlement') || str_contains($module, 'payment') || in_array($module, ['refunds', 'commissions', 'reconciliations', 'financial_ledger_entries', 'receipts'], true) => 'finance.manage',
+            str_contains($module, 'wallet') || str_contains($module, 'settlement') || str_contains($module, 'payment') || in_array($module, ['refunds', 'commissions', 'reconciliations', 'financial_ledger_entries', 'receipts', 'integration_logs'], true) => 'finance.manage',
             str_contains($module, 'bus_') || in_array($module, ['drivers', 'conductors', 'seat_layouts', 'maintenance_records', 'incidents', 'pre_trip_checklists'], true) => 'fleet.manage',
             str_contains($module, 'boarding') || str_contains($module, 'offline_sync') => 'boarding.manage',
             in_array($module, ['route_stops', 'schedules', 'trip_stops', 'trip_staff', 'fares', 'fare_rules', 'trip_status_updates', 'vehicle_locations', 'gps_locations'], true) => 'trips.manage',

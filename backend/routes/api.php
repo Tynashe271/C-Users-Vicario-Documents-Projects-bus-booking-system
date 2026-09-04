@@ -263,6 +263,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/finance/settlements', [FinanceController::class, 'createSettlement']);
         Route::post('/finance/settlements/{settlement}/approve', [FinanceController::class, 'approve']);
         Route::post('/finance/settlements/{settlement}/pay', [FinanceController::class, 'pay']);
+        Route::post('/finance/settlements/{settlement}/accounting-export', [FinanceController::class, 'exportToAccounting']);
         Route::post('/finance/reconciliations', [FinanceController::class, 'reconcile']);
         Route::get('/refunds', [RefundAdministrationController::class, 'index']);
         Route::get('/refunds/report', [RefundAdministrationController::class, 'report']);

@@ -3,6 +3,7 @@
 use App\Http\Middleware\AuthenticateApiKey;
 use App\Http\Middleware\EnsureActiveCompany;
 use App\Http\Middleware\SecurityHeaders;
+use App\Services\ErrorMonitoringService;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -27,4 +28,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+        // Forwards unexpected (5xx-class) exceptions to a configured external error-monitoring
+        // service, in addition to (not instead of) Laravel's normal logging — see
+        // ErrorMonitoringService for why routine validation/404/403 rejections never reach it.
+        $exceptions->report(function (Throwable $e): void {
+            app(ErrorMonitoringService::class)->report($e);
+        });
     })->create();
