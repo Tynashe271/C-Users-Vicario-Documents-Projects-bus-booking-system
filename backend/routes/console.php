@@ -30,3 +30,4 @@ Schedule::call(fn () => StaffInvitation::whereNull('accepted_at')->where('expire
     ->withoutOverlapping();
 Schedule::command('sanctum:prune-expired --hours=24')->daily()->withoutOverlapping();
 Schedule::command('fleet:send-document-expiry-warnings --days=30')->dailyAt('07:00')->withoutOverlapping();
+Schedule::command('system:check-consistency')->hourly()->withoutOverlapping();

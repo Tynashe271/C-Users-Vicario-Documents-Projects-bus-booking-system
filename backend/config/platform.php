@@ -23,6 +23,7 @@ $modules = [
     'manual_boarding_verifications', 'trip_status_updates', 'incident_attachments', 'agent_statements',
     'review_moderations', 'financial_ledger_entries', 'collection_proofs', 'response_templates',
     'integration_logs', 'webhook_subscriptions', 'webhook_deliveries', 'api_usage_records',
+    'consistency_checks',
 ];
 
 return [

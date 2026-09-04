@@ -47,7 +47,7 @@ class PlatformModuleResolver
             str_contains($module, 'parcel') || $module === 'collection_proofs' => 'parcels.manage',
             str_contains($module, 'support') => 'support.manage',
             str_contains($module, 'security') || str_contains($module, 'api_client') || str_contains($module, 'webhook') => 'security.manage',
-            str_contains($module, 'report') || str_contains($module, 'analytics') || $module === 'api_usage_records' => 'reports.view',
+            str_contains($module, 'report') || str_contains($module, 'analytics') || in_array($module, ['api_usage_records', 'consistency_checks'], true) => 'reports.view',
             str_contains($module, 'wallet') || str_contains($module, 'settlement') || str_contains($module, 'payment') || in_array($module, ['refunds', 'commissions', 'reconciliations', 'financial_ledger_entries', 'receipts', 'integration_logs'], true) => 'finance.manage',
             str_contains($module, 'bus_') || in_array($module, ['drivers', 'conductors', 'seat_layouts', 'maintenance_records', 'incidents', 'pre_trip_checklists'], true) => 'fleet.manage',
             str_contains($module, 'boarding') || str_contains($module, 'offline_sync') => 'boarding.manage',
