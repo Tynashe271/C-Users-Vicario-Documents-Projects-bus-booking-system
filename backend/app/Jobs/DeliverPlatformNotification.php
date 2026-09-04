@@ -21,7 +21,12 @@ class DeliverPlatformNotification implements ShouldQueue
     /**
      * Create a new job instance.
      */
-    public function __construct(public int $notificationId) {}
+    public function __construct(public int $notificationId)
+    {
+        // Named queue so a worker can prioritise lanes independently (see QueueController's
+        // MONITORED_QUEUES) instead of every job type competing on a single "default" queue.
+        $this->onQueue('notifications');
+    }
 
     /**
      * Execute the job.

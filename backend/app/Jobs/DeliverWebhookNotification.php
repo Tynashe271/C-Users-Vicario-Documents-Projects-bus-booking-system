@@ -24,7 +24,10 @@ class DeliverWebhookNotification implements ShouldQueue
     /** @var list<int> */
     public array $backoff = [30, 120, 600, 1800, 7200];
 
-    public function __construct(public int $deliveryId) {}
+    public function __construct(public int $deliveryId)
+    {
+        $this->onQueue('webhooks');
+    }
 
     public function handle(): void
     {
